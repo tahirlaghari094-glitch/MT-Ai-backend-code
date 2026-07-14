@@ -206,7 +206,8 @@ app.post('/api/chat', async (req, res) => {
                 return `${senderName}: ${msg.content}`;
             }).join('\n');
 
-            const systemInstructions = "System: You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Remember and use the chat history below to understand pronouns and maintain context. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks.";
+            // --- RE-ENGINEERED INSTRUCTIONS FOR STRICT DEFAULT ENGLISH ---
+            const systemInstructions = "System: You are MT AI, a friendly and extremely smart virtual assistant. You MUST always reply and talk in English by default. Even if the user writes in Roman Urdu, Hindi, or Urdu, you must still respond in English. The only exception is if the user explicitly asks you to speak or explain in a different language (e.g., 'speak Urdu', 'reply in Urdu', 'is language ma batao', etc.). Keep your memory active for context.";
             const fullPayload = `${systemInstructions}\n\n${chatScript}\nAssistant:`;
 
             const aiFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}`);

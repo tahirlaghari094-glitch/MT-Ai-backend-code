@@ -22,7 +22,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Ensure Uploads Directory Exists (Local testing ke liye)
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir);
+    fs.mkdirSync(uploadDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadDir));
 
@@ -99,7 +99,6 @@ app.post('/api/user/upgrade', (req, res) => {
 });
 
 // 5. ASSET PIPELINE: FILE/CAMERA UPLOAD SYSTEM
-// Yeh endpoint standard file upload (Gallery/Documents) aur direct Base64 stream (Camera capture) dono ko handle karta hai
 app.post('/api/upload', upload.single('file'), (req, res) => {
     const host = req.get('host');
     const protocol = host.includes('localhost') ? req.protocol : 'https';
@@ -156,9 +155,7 @@ const generateHumanPortraitImage = async (query, mode) => {
     const searchKeyword = query ? encodeURIComponent(enhancedPrompt) : "amazing-portrait";
     
     // 512x512 compact square image
-    const generatedImageUrl = `https://image.pollinations.ai/prompt/${searchKeyword}?width=512&height=512&nologo=true&private=true`;
-
-    return generatedImageUrl;
+    return `https://image.pollinations.ai/prompt/${searchKeyword}?width=512&height=512&nologo=true&private=true`;
 };
 
 // 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE
@@ -200,7 +197,7 @@ app.post('/api/chat', async (req, res) => {
 
     try {
         if (pinnedFile) {
-            aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank">View File</a>`;
+            aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } else {
             const conversationHistory = database.conversations[email].slice(-10);
 

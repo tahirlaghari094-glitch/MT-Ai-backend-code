@@ -7,11 +7,14 @@ const fs = require('fs');
 const app = express();
 
 // Render ya kisi bhi live server ke liye Dynamic Port zaroori hai
+// Payload size limit ko barha diya gaya hai taake base64 camera images asani se upload ho sakein
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 const PORT = process.env.PORT || 5000;
 
 // MIDDLEWARES
 app.use(cors());
-app.use(express.json());
 
 // HTML/CSS files host karne ke liye (agar frontend isi server se chalana ho tab ke liye)
 app.use(express.static(path.join(__dirname, 'public')));
@@ -23,7 +26,7 @@ if (!fs.existsSync(uploadDir)) {
 }
 app.use('/uploads', express.static(uploadDir));
 
-// MULTER STORAGE SYSTEM FOR UPLOADS
+// MULTER STORAGE SYSTEM FOR UPLOADS (My Files aur Gallery ke liye)
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'uploads/');
@@ -36,8 +39,6 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // IN-MEMORY MOCK DATABASE
-// Note: Live server restart hone par ye reset ho jayega. 
-// Future me aap iski jagah MongoDB use kar sakte hain.
 const database = {
     users: [], 
     conversations: {} 
@@ -98,15 +99,37 @@ app.post('/api/user/upgrade', (req, res) => {
 });
 
 // 5. ASSET PIPELINE: FILE/CAMERA UPLOAD SYSTEM
-// Live server par local files delete ho jati hain, isliye humne isme handle kiya hai secure URL schema
+// Yeh endpoint standard file upload (Gallery/Documents) aur direct Base64 stream (Camera capture) dono ko handle karta hai
 app.post('/api/upload', upload.single('file'), (req, res) => {
+    const host = req.get('host');
+    const protocol = host.includes('localhost') ? req.protocol : 'https';
+
+    // A: Agar camera se direct image (Base64 data) aayi ho
+    if (req.body.image) {
+        try {
+            const base64Data = req.body.image.replace(/^data:image\/\w+;base64,/, "");
+            const filename = `camera-${Date.now()}-${Math.round(Math.random() * 1E9)}.png`;
+            const filepath = path.join(uploadDir, filename);
+
+            fs.writeFileSync(filepath, base64Data, 'base64');
+
+            return res.json({
+                success: true,
+                file: {
+                    filename: filename,
+                    originalName: "Camera_Capture.png",
+                    url: `${protocol}://${host}/uploads/${filename}`
+                }
+            });
+        } catch (error) {
+            return res.status(500).json({ success: false, message: "Camera image process karne me masla hua." });
+        }
+    }
+
+    // B: Agar normal file select (Gallery ya My Files) ki ho
     if (!req.file) {
         return res.status(400).json({ success: false, message: "Failed parsing stream asset." });
     }
-
-    const host = req.get('host');
-    // Live servers (like Render) par protocol hamesha HTTPS hota hai
-    const protocol = host.includes('localhost') ? req.protocol : 'https';
 
     res.json({
         success: true,
@@ -189,7 +212,6 @@ app.post('/api/chat', async (req, res) => {
             const systemInstructions = "System: You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Remember and use the chat history below to understand pronouns and maintain context. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks.";
             const fullPayload = `${systemInstructions}\n\n${chatScript}\nAssistant:`;
 
-            // Node.js 18+ global fetch is natively supported
             const aiFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}`);
             if (aiFetch.ok) {
                 aiResponse = await aiFetch.text();

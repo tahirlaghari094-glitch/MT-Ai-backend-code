@@ -6,8 +6,7 @@ const fs = require('fs');
 
 const app = express();
 
-// Render ya kisi bhi live server ke liye Dynamic Port zaroori hai
-// Payload size limit ko barha diya gaya hai taake base64 camera images asani se upload ho sakein
+// Payload size limit for smooth transfers
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -16,17 +15,17 @@ const PORT = process.env.PORT || 5000;
 // MIDDLEWARES
 app.use(cors());
 
-// HTML/CSS files host karne ke liye (agar frontend isi server se chalana ho tab ke liye)
+// Static Files hosting
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Ensure Uploads Directory Exists (Local testing ke liye)
+// Ensure Uploads Directory Exists
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadDir));
 
-// MULTER STORAGE SYSTEM FOR UPLOADS (My Files aur Gallery ke liye)
+// MULTER STORAGE SYSTEM (My Files & Gallery)
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'uploads/');
@@ -103,7 +102,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     const host = req.get('host');
     const protocol = host.includes('localhost') ? req.protocol : 'https';
 
-    // A: Agar camera se direct image (Base64 data) aayi ho
+    // A: Agar camera se direct raw Base64 data aaye (Android direct interface trigger)
     if (req.body.image) {
         try {
             const base64Data = req.body.image.replace(/^data:image\/\w+;base64,/, "");
@@ -116,7 +115,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
                 success: true,
                 file: {
                     filename: filename,
-                    originalName: "Camera_Capture.png",
+                    originalName: req.body.originalName || "Camera_Capture.png",
                     url: `${protocol}://${host}/uploads/${filename}`
                 }
             });
@@ -125,7 +124,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
         }
     }
 
-    // B: Agar normal file select (Gallery ya My Files) ki ho
+    // B: Normal Multipart uploader fallback
     if (!req.file) {
         return res.status(400).json({ success: false, message: "Failed parsing stream asset." });
     }
@@ -149,12 +148,10 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// **--- IMAGE GENERATION HELPER FUNCTION ---**
+// IMAGE GENERATION HELPER FUNCTION
 const generateHumanPortraitImage = async (query, mode) => {
     const enhancedPrompt = `highly detailed portrait, realistic face of ${query}, cinematic lighting, 8k, detailed skin texture, photorealistic, professional photograph, high definition`;
     const searchKeyword = query ? encodeURIComponent(enhancedPrompt) : "amazing-portrait";
-    
-    // 512x512 compact square image
     return `https://image.pollinations.ai/prompt/${searchKeyword}?width=512&height=512&nologo=true&private=true`;
 };
 
@@ -206,7 +203,7 @@ app.post('/api/chat', async (req, res) => {
                 return `${senderName}: ${msg.content}`;
             }).join('\n');
 
-            const systemInstructions = "System: You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Remember and use the chat history below to understand pronouns and maintain context. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks.";
+            const systemInstructions = "System: You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks.";
             const fullPayload = `${systemInstructions}\n\n${chatScript}\nAssistant:`;
 
             const aiFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}`);
@@ -256,8 +253,8 @@ app.post('/api/chat', async (req, res) => {
         response: aiResponse
     });
 });
- //START EXPRESS PIPELINE INTERACTION
+
+// START EXPRESS SERVER
 app.listen(PORT, () => {
-    console.log(`⚡ MT AI Engine Active on Port: ${PORT};
-    });
-    
+    console.log(`⚡ MT AI Engine Active on Port: ${PORT}`);
+});

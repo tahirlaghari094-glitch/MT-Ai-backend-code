@@ -278,16 +278,17 @@ app.post('/api/chat', async (req, res) => {
                 const displayName = imageResult.realTitle;
                 const realImageUrl = imageResult.url;
                 
-                // FIXED: Removed Markdown Image syntax. Now only showing the beautifully controlled smaller HTML image.
                 aiResponse = `Ji bilkul! Ye rahi **${displayName}** ki real photo:\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:280px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
             } else {
                 aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public profile photo nahi mil saki. Kya aap kisi aur famous celebrity ya mashhoor cheez ki pic dekhna chahte hain?`;
             }
 
         } else {
-            // --- NORMAL CHAT PIPELINE (WITH GEMINI) ---
+            // --- NORMAL CHAT PIPELINE ---
             const conversationHistory = database.conversations[email].slice(-10);
             
+            const systemPrompt = "You are MT AI, an advanced, ultra-intelligent virtual assistant. Reply naturally in Roman Urdu (Pakistani style Urdu using English alphabets). Provide 100% accurate, factual, and correct historical/personal details. Strictly avoid hallucinating fake facts, wrong political affiliations, or nonsensical gibberish. Keep the tone friendly, helpful, and grounded.";
+
             try {
                 const contents = conversationHistory.map(msg => ({
                     role: msg.sender === 'user' ? 'user' : 'model',
@@ -298,8 +299,8 @@ app.post('/api/chat', async (req, res) => {
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
-                        systemInstruction: "You are MT AI, an advanced virtual assistant. Reply naturally in Urdu/English.",
-                        temperature: 0.7
+                        systemInstruction: systemPrompt,
+                        temperature: 0.5 // Lowered temperature for higher factual precision
                     }
                 });
 
@@ -311,19 +312,19 @@ app.post('/api/chat', async (req, res) => {
             } catch (geminiError) {
                 console.warn("⚠️ Gemini 2.0 Free quota exceeded, activating backup!");
                 
+                // Formulating a strict prompt for Pollinations backup to ensure factual consistency
                 const chatScript = conversationHistory.map(msg => {
                     const senderName = msg.sender === 'user' ? 'User' : 'Assistant';
                     return `${senderName}: ${msg.content}`;
                 }).join('\n');
 
-                const systemInstructions = "System: You are MT AI, an ultra-intelligent AI assistant. Reply naturally in Urdu/English.";
-                const fullPayload = `${systemInstructions}\n\n${chatScript}\nAssistant:`;
+                const fullPayload = `System: ${systemPrompt}\n\n${chatScript}\nAssistant:`;
 
-                const fallbackFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}`);
+                const fallbackFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}?model=openai`);
                 if (fallbackFetch.ok) {
                     aiResponse = await fallbackFetch.text();
                 } else {
-                    aiResponse = "Apologies, the backup system is busy. Please try again in a few moments.";
+                    aiResponse = "Maazrat! System abhi thoda busy hai. Baraye meharbani kuch lamhon baad dobara koshish karein.";
                 }
             }
         }

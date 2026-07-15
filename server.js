@@ -3,13 +3,18 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-// Google Gen AI SDK import karein
+// Google Gen AI SDK import
 const { GoogleGenAI } = require('@google/genai');
 
 const app = express();
 
-// Google Gen AI Client Initialize (Aapka Railway variable 'GEMINIAPIKEY' use karega)
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINIAPIKEY });
+// Railway variable "GEMINIAPIKEY" ko read karein
+const apiKey = process.env.GEMINIAPIKEY;
+if (!apiKey) {
+    console.error("❌ WARNING: GEMINIAPIKEY is not set in environment variables!");
+}
+
+const ai = new GoogleGenAI({ apiKey: apiKey });
 
 // Payload size limit for smooth transfers
 app.use(express.json({ limit: '50mb' }));
@@ -30,7 +35,7 @@ if (!fs.existsSync(uploadDir)) {
 }
 app.use('/uploads', express.static(uploadDir));
 
-// MULTER STORAGE SYSTEM (My Files & Gallery)
+// MULTER STORAGE SYSTEM
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'uploads/');
@@ -107,7 +112,6 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     const host = req.get('host');
     const protocol = host.includes('localhost') ? req.protocol : 'https';
 
-    // A: Agar camera se direct raw Base64 data aaye (Android direct interface trigger)
     if (req.body.image) {
         try {
             const base64Data = req.body.image.replace(/^data:image\/\w+;base64,/, "");
@@ -129,7 +133,6 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
         }
     }
 
-    // B: Normal Multipart uploader fallback
     if (!req.file) {
         return res.status(400).json({ success: false, message: "Failed parsing stream asset." });
     }
@@ -168,11 +171,13 @@ const generateImagen3Image = async (query) => {
             },
         });
 
-        const base64Image = response.generatedImages[0].image.imageBytes;
-        return `data:image/jpeg;base64,${base64Image}`;
+        if (response && response.generatedImages && response.generatedImages[0]) {
+            const base64Image = response.generatedImages[0].image.imageBytes;
+            return `data:image/jpeg;base64,${base64Image}`;
+        }
+        throw new Error("No image data returned from Google API");
     } catch (error) {
         console.error("Imagen 3 generation error, falling back:", error);
-        // Fallback: Agar kisi wajah se Imagen 3 fail ho jaye, to Pollinations image link dega
         const searchKeyword = query ? encodeURIComponent(query) : "amazing-portrait";
         return `https://image.pollinations.ai/prompt/${searchKeyword}?width=512&height=512&nologo=true&private=true`;
     }
@@ -219,23 +224,28 @@ app.post('/api/chat', async (req, res) => {
         if (pinnedFile) {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } else {
-            // Gemini structure format ke mutabiq history tayar karein
             const conversationHistory = database.conversations[email].slice(-10);
+            
+            // Safe mapping format for Gemini SDK contents
             const contents = conversationHistory.map(msg => ({
                 role: msg.sender === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }]
+                parts: [{ text: msg.content || ' ' }]
             }));
 
-            // Gemini Call karein
+            // API Call with exact SDK params
             const geminiResponse = await ai.models.generateContent({
-                model: 'gemini-2.5-flash', // Intelligent model for quick answers
+                model: 'gemini-2.5-flash',
                 contents: contents,
                 config: {
                     systemInstruction: "You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks."
                 }
             });
 
-            aiResponse = geminiResponse.text;
+            if (geminiResponse && geminiResponse.text) {
+                aiResponse = geminiResponse.text;
+            } else {
+                aiResponse = "Mujhe response generate karne me thora masla hua. Dobara koshish karein.";
+            }
         }
 
         // --- IMAGE DETECTION ENGINE ---
@@ -257,7 +267,6 @@ app.post('/api/chat', async (req, res) => {
                 }
             }
 
-            // --- IMAGEN 3 CALL ---
             const generatedImageUrl = await generateImagen3Image(cleanQuery);
 
             aiResponse += `<br><br><div style="margin-top: 15px;">
@@ -267,8 +276,8 @@ app.post('/api/chat', async (req, res) => {
         }
 
     } catch (error) {
-        console.error("AI Generation Error:", error);
-        aiResponse = "Server connection lost. Please check your internet or retry.";
+        console.error("AI Generation Error details:", error);
+        aiResponse = `System integration error: ${error.message || "Please check backend environment configurations."}`;
     }
 
     database.conversations[email].push({ sender: 'ai', content: aiResponse });

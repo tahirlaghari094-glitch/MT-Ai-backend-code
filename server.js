@@ -255,11 +255,8 @@ app.post('/api/chat', async (req, res) => {
 
     const promptLower = prompt.toLowerCase();
     
-    // Strict image intent checking: users must explicitly ask to show/see/draw an image
-    const imageKeywords = [
-        "image dikhao", "photo dikhao", "picture dikhao", "tasveer dikhao", 
-        "show image", "show photo", "generate image", "draw a", "pic dikhao"
-    ];
+    // BROAD IMAGE INTENT TRIGGER: (Prompt me image/photo/pic/tasveer aate hi trigger hoga)
+    const imageKeywords = ["image", "photo", "pic", "picture", "tasveer", "taswer"];
     const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
 
     try {
@@ -267,7 +264,8 @@ app.post('/api/chat', async (req, res) => {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } else if (wantsImage) {
             // --- IMAGE ONLY PIPELINE ---
-            let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
+            // Cleaning up standard helper words to extract only the subject
+            let cleanQuery = prompt.replace(/\b(show me|give me|give|do|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|show|dikhao|dikhana)\b/gi, "").trim();
             
             if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
                 const userMessagesOnly = database.conversations[email]
@@ -276,7 +274,7 @@ app.post('/api/chat', async (req, res) => {
                 
                 if (userMessagesOnly.length >= 2) {
                     const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki|dikhayein|dikhain|taswer)\b/gi, "").trim();
+                    cleanQuery = lastTopic.replace(/\b(show me|give me|give|do|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|banao|mujhe|ki|dikhayein|dikhain|taswer|show|dikhao|dikhana)\b/gi, "").trim();
                 }
             }
 
@@ -292,7 +290,7 @@ app.post('/api/chat', async (req, res) => {
             }
 
         } else {
-            // --- GENERAL CHAT / FACTS PIPELINE (Direct Gemini 2.0 Flash with No Hallucinations) ---
+            // --- GENERAL CHAT / FACTS PIPELINE (Direct Gemini 2.0 Flash) ---
             const conversationHistory = database.conversations[email].slice(-6);
             
             const systemPrompt = `You are MT AI, an advanced AI virtual assistant developed by MT.

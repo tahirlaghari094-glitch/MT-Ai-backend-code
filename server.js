@@ -257,16 +257,22 @@ app.post('/api/chat', async (req, res) => {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } 
         else if (wantsGeneration) {
-            // --- AI IMAGE GENERATION PIPELINE (POLINATION API) ---
+            // --- AI IMAGE GENERATION ---
             let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|bana kar do|bana do)\b/gi, "").trim();
             cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
 
-            if (!cleanQuery) cleanQuery = "A beautiful futuristic digital art";
+            if (!cleanQuery) cleanQuery = "A beautiful photo";
 
             const seed = Math.floor(Math.random() * 1000000);
+            // Dynamic Image URL directly from Pollinations API with clean formatting
             const generatedImageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
 
-            aiResponse = `Ji bilkul! Maine aapke kehne par **"${cleanQuery}"** ki tasveer generate kar di hai:\n\n<img src="${generatedImageUrl}" alt="${cleanQuery}" style="max-width:100%; width:300px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
+            // Clean, scannable, and styled image output container
+            aiResponse = `Ji bilkul! Maine aapke kehne par **"${cleanQuery}"** ki tasveer generate kar di hai:
+
+<div style="margin-top: 15px; display: block; max-width: 100%;">
+  <img src="${generatedImageUrl}" alt="${cleanQuery}" style="width: 100%; max-width: 400px; height: auto; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: block;" />
+</div>`;
         } 
         else if (wantsSearchOnly) {
             // --- REAL SEARCH PIPELINE (WIKIPEDIA) ---
@@ -276,7 +282,11 @@ app.post('/api/chat', async (req, res) => {
             const imageResult = await findRealWebImage(cleanQuery);
             
             if (imageResult && imageResult.found) {
-                aiResponse = `Ji bilkul! Ye rahi **${imageResult.realTitle}** ki real photo:\n\n<img src="${imageResult.url}" alt="${imageResult.realTitle}" style="max-width:100%; width:280px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
+                aiResponse = `Ji bilkul! Ye rahi **${imageResult.realTitle}** ki real photo:
+
+<div style="margin-top: 15px; display: block; max-width: 100%;">
+  <img src="${imageResult.url}" alt="${imageResult.realTitle}" style="width: 100%; max-width: 400px; height: auto; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: block;" />
+</div>`;
             } else {
                 aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public photo nahi mil saki. Agar aap chahte hain ke main iski image AI se khud **generate** karun, toh mujhe boleain "iski photo bana kar do"!`;
             }

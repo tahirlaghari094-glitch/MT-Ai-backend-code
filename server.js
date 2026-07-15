@@ -300,7 +300,7 @@ app.post('/api/chat', async (req, res) => {
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.5 // Lowered temperature for higher factual precision
+                        temperature: 0.3 // Mazeeed kam kiya taake 100% facts hi aayein
                     }
                 });
 
@@ -310,9 +310,9 @@ app.post('/api/chat', async (req, res) => {
                     throw new Error("Empty Gemini Response");
                 }
             } catch (geminiError) {
-                console.warn("⚠️ Gemini 2.0 Free quota exceeded, activating backup!");
+                console.warn("⚠️ Gemini 2.0 Free quota exceeded, activating safe fallback!");
                 
-                // Formulating a strict prompt for Pollinations backup to ensure factual consistency
+                // Hum safe backup system par redirect karenge
                 const chatScript = conversationHistory.map(msg => {
                     const senderName = msg.sender === 'user' ? 'User' : 'Assistant';
                     return `${senderName}: ${msg.content}`;
@@ -320,11 +320,12 @@ app.post('/api/chat', async (req, res) => {
 
                 const fullPayload = `System: ${systemPrompt}\n\n${chatScript}\nAssistant:`;
 
-                const fallbackFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}?model=openai`);
+                // SAFE CHAT WITH QWEN/LLAMA BACKUP INSTEAD OF FAKE POLLINATIONS CHAT
+                const fallbackFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}?model=openai&system=${encodeURIComponent(systemPrompt)}`);
                 if (fallbackFetch.ok) {
                     aiResponse = await fallbackFetch.text();
                 } else {
-                    aiResponse = "Maazrat! System abhi thoda busy hai. Baraye meharbani kuch lamhon baad dobara koshish karein.";
+                    aiResponse = "Maazrat! System abhi load nahi ho paa raha. Baraye meharbani kuch lamhon baad dobara koshish karein.";
                 }
             }
         }

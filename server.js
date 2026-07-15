@@ -156,7 +156,7 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- DYNAMIC IMAGE SCRAPER (Strictly for Image Intents) ---
+// --- DYNAMIC IMAGE SCRAPER ---
 const findRealWebImage = async (query) => {
     try {
         let cleanQuery = query.trim();
@@ -255,7 +255,7 @@ app.post('/api/chat', async (req, res) => {
 
     const promptLower = prompt.toLowerCase();
     
-    // BROAD IMAGE INTENT TRIGGER: (Prompt me image/photo/pic/tasveer aate hi trigger hoga)
+    // BROAD IMAGE INTENT TRIGGER (Sirf Core Words)
     const imageKeywords = ["image", "photo", "pic", "picture", "tasveer", "taswer"];
     const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
 
@@ -264,7 +264,6 @@ app.post('/api/chat', async (req, res) => {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } else if (wantsImage) {
             // --- IMAGE ONLY PIPELINE ---
-            // Cleaning up standard helper words to extract only the subject
             let cleanQuery = prompt.replace(/\b(show me|give me|give|do|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|show|dikhao|dikhana)\b/gi, "").trim();
             
             if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
@@ -290,16 +289,15 @@ app.post('/api/chat', async (req, res) => {
             }
 
         } else {
-            // --- GENERAL CHAT / FACTS PIPELINE (Direct Gemini 2.0 Flash) ---
+            // --- GENERAL CHAT / FACTS PIPELINE ---
             const conversationHistory = database.conversations[email].slice(-6);
             
             const systemPrompt = `You are MT AI, an advanced AI virtual assistant developed by MT.
 ALWAYS reply in natural, highly accurate, and conversational Roman Urdu.
 
-Your core mission is ABSOLUTE FACTUAL ACCURACY:
-1. Never hallucinate or make up fake facts.
-2. If a user presents biographical text, essays, or information containing historical, political, or celebrity errors, you MUST gently, clearly, and directly correct the mistakes with 100% verified facts.
-3. Keep the tone helpful, smart, and friendly (like an expert peer). Explain complex topics (coding, science, history) in a detailed, structured way.`;
+Your core mission is ABSOLUTE ACCURACY:
+- Deliver direct, clear, and perfectly factual responses.
+- Keep the tone helpful and friendly.`;
 
             try {
                 if (!apiKey) {
@@ -316,7 +314,25 @@ Your core mission is ABSOLUTE FACTUAL ACCURACY:
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.2 // Low temperature for high factual precision in answers
+                        temperature: 0.1, // Highly precise and direct
+                        safetySettings: [
+                            {
+                                category: 'HARM_CATEGORY_HATE_SPEECH',
+                                threshold: 'BLOCK_NONE'
+                            },
+                            {
+                                category: 'HARM_CATEGORY_HARASSMENT',
+                                threshold: 'BLOCK_NONE'
+                            },
+                            {
+                                category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                                threshold: 'BLOCK_NONE'
+                            },
+                            {
+                                category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                                threshold: 'BLOCK_NONE'
+                            }
+                        ]
                     }
                 });
 
@@ -341,7 +357,7 @@ Your core mission is ABSOLUTE FACTUAL ACCURACY:
                                 }))
                             ],
                             model: "openai",
-                            temperature: 0.2
+                            temperature: 0.1
                         })
                     });
 

@@ -3,8 +3,13 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+// Google Gen AI SDK import karein
+const { GoogleGenAI } = require('@google/genai');
 
 const app = express();
+
+// Google Gen AI Client Initialize (Aapka Railway variable 'GEMINIAPIKEY' use karega)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINIAPIKEY });
 
 // Payload size limit for smooth transfers
 app.use(express.json({ limit: '50mb' }));
@@ -148,14 +153,32 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// IMAGE GENERATION HELPER FUNCTION
-const generateHumanPortraitImage = async (query, mode) => {
-    const enhancedPrompt = `highly detailed portrait, realistic face of ${query}, cinematic lighting, 8k, detailed skin texture, photorealistic, professional photograph, high definition`;
-    const searchKeyword = query ? encodeURIComponent(enhancedPrompt) : "amazing-portrait";
-    return `https://image.pollinations.ai/prompt/${searchKeyword}?width=512&height=512&nologo=true&private=true`;
+// --- GOOGLE IMAGEN 3 IMAGE GENERATOR ---
+const generateImagen3Image = async (query) => {
+    try {
+        const enhancedPrompt = `Highly detailed photo, realistic rendering of ${query}, cinematic lighting, 8k resolution, masterpiece, professional photography`;
+        
+        const response = await ai.models.generateImages({
+            model: 'imagen-3.0-generate-002',
+            prompt: enhancedPrompt,
+            config: {
+                numberOfImages: 1,
+                aspectRatio: '1:1',
+                outputMimeType: 'image/jpeg',
+            },
+        });
+
+        const base64Image = response.generatedImages[0].image.imageBytes;
+        return `data:image/jpeg;base64,${base64Image}`;
+    } catch (error) {
+        console.error("Imagen 3 generation error, falling back:", error);
+        // Fallback: Agar kisi wajah se Imagen 3 fail ho jaye, to Pollinations image link dega
+        const searchKeyword = query ? encodeURIComponent(query) : "amazing-portrait";
+        return `https://image.pollinations.ai/prompt/${searchKeyword}?width=512&height=512&nologo=true&private=true`;
+    }
 };
 
-// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE
+// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE (Gemini Integration)
 app.post('/api/chat', async (req, res) => {
     const { 
         email = 'guest@example.com', 
@@ -196,22 +219,23 @@ app.post('/api/chat', async (req, res) => {
         if (pinnedFile) {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } else {
+            // Gemini structure format ke mutabiq history tayar karein
             const conversationHistory = database.conversations[email].slice(-10);
+            const contents = conversationHistory.map(msg => ({
+                role: msg.sender === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.content }]
+            }));
 
-            const chatScript = conversationHistory.map(msg => {
-                const senderName = msg.sender === 'user' ? 'User' : 'Assistant';
-                return `${senderName}: ${msg.content}`;
-            }).join('\n');
+            // Gemini Call karein
+            const geminiResponse = await ai.models.generateContent({
+                model: 'gemini-2.5-flash', // Intelligent model for quick answers
+                contents: contents,
+                config: {
+                    systemInstruction: "You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks."
+                }
+            });
 
-            const systemInstructions = "System: You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks.";
-            const fullPayload = `${systemInstructions}\n\n${chatScript}\nAssistant:`;
-
-            const aiFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}`);
-            if (aiFetch.ok) {
-                aiResponse = await aiFetch.text();
-            } else {
-                aiResponse = "System temporarily busy. Please try again.";
-            }
+            aiResponse = geminiResponse.text;
         }
 
         // --- IMAGE DETECTION ENGINE ---
@@ -233,7 +257,8 @@ app.post('/api/chat', async (req, res) => {
                 }
             }
 
-            const generatedImageUrl = await generateHumanPortraitImage(cleanQuery, mode);
+            // --- IMAGEN 3 CALL ---
+            const generatedImageUrl = await generateImagen3Image(cleanQuery);
 
             aiResponse += `<br><br><div style="margin-top: 15px;">
                 <strong>🎨 Generated Portrait for "${cleanQuery || "Context"}" :</strong><br>

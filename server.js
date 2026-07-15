@@ -257,17 +257,36 @@ app.post('/api/chat', async (req, res) => {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } 
         else if (wantsGeneration) {
-            // --- AI IMAGE GENERATION ---
-            let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|bana kar do|bana do)\b/gi, "").trim();
-            cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
+            // --- SMART AI PROMPT CLEANING WITH GEMINI ---
+            let cleanQuery = "A beautiful photo";
+            try {
+                const extractionPrompt = `You are a helper that extracts the core visual description from a user's messy chat message to use as an AI image generator prompt.
+                User Message: "${prompt}"
+                
+                Instructions:
+                1. Remove conversational clutter like "Ji bilkul! Maine aapke kehne par", "phir ya aarha ha", "banao", "generate", "bana do", etc.
+                2. Keep only the main visual subjects, settings, and style (e.g., "Aloo or pyaz hospital k bahar 3d").
+                3. Translate it into high-quality, descriptive English for best generation results (e.g., "A 3D render of a cute cartoon potato and an onion standing outside a modern hospital building").
+                4. Reply with ONLY the final English visual prompt. Do not add any extra text or quotes.`;
 
-            if (!cleanQuery) cleanQuery = "A beautiful photo";
+                const geminiExtraction = await ai.models.generateContent({
+                    model: 'gemini-2.0-flash',
+                    contents: [{ role: 'user', parts: [{ text: extractionPrompt }] }],
+                    config: { temperature: 0.1 }
+                });
+
+                if (geminiExtraction.text && geminiExtraction.text.trim()) {
+                    cleanQuery = geminiExtraction.text.trim().replace(/^["']|["']$/g, "");
+                }
+            } catch (err) {
+                // Fallback basic cleaning if Gemini fails
+                cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|bana kar do|bana do)\b/gi, "").trim();
+                cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
+            }
 
             const seed = Math.floor(Math.random() * 1000000);
-            // Dynamic Image URL directly from Pollinations API with clean formatting
             const generatedImageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
 
-            // Clean, scannable, and styled image output container
             aiResponse = `Ji bilkul! Maine aapke kehne par **"${cleanQuery}"** ki tasveer generate kar di hai:
 
 <div style="margin-top: 15px; display: block; max-width: 100%;">
@@ -275,7 +294,7 @@ app.post('/api/chat', async (req, res) => {
 </div>`;
         } 
         else if (wantsSearchOnly) {
-            // --- REAL SEARCH PIPELINE (WIKIPEDIA) ---
+            // --- REAL SEARCH ---
             let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
             cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
 

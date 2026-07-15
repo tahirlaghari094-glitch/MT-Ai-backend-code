@@ -1,29 +1,32 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch'); // Ensure fetch is available in your node environment
+const fetch = require('node-fetch'); // Ensure fetch is installed (npm i node-fetch)
+const { GoogleGenAI } = require('@google/genai'); // Importing the correct Google Gen AI SDK
+
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-// Mock Databases for Configuration - Replace with your actual database instances if any
+// Mock Databases for Configuration
 const database = {
     users: [],
     conversations: {}
 };
 
-// Replace with your actual Google AI Studio API Key configuration
+// Replace with your actual Gemini API Key configuration
 const apiKey = process.env.GEMINI_API_KEY || "YOUR_GEMINI_API_KEY"; 
+
+// Initializing the Google GenAI client correctly using your API Key
+const ai = new GoogleGenAI({ apiKey: apiKey });
 
 // Mock helper function to fetch real web images
 async function findRealWebImage(query) {
     try {
-        // Implement your actual Google Search/Custom Search API logic here.
-        // For fallback mock purposes:
         if (!query || query.length < 2) return { found: false };
         
+        // Custom search layout logic: You can replace this placeholder with real Google Search custom engine if you have it
         const encodedQuery = encodeURIComponent(query);
-        // Using a reliable public image source API or search API
         const url = `https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=600&auto=format&fit=crop`; 
         
         return {
@@ -161,8 +164,7 @@ app.post('/api/chat', async (req, res) => {
             }
 
         } else {
-            // --- PIPELINE 3: GENERAL TEXT CHAT (ENGLISH DEFAULT / MULTILINGUAL ADAPTIVE) ---
-            
+            // --- PIPELINE 3: GENERAL TEXT CHAT (ENGLISH DEFAULT) ---
             const systemPrompt = `You are MT AI, an elite AI assistant developed by MT.
 
 CRITICAL RULES:
@@ -202,7 +204,6 @@ CRITICAL RULES:
             let contents = [];
 
             if (isFactualQuery) {
-                // Ensure fresh context search for critical bios and political profiles
                 contents = [
                     {
                         role: 'user',
@@ -222,14 +223,14 @@ CRITICAL RULES:
                     throw new Error("Gemini API key is missing.");
                 }
 
-                // Call the real Google AI Studio Model (Gemini 2.0 Flash)
+                // Call the correct SDK method on 'ai.models' instance
                 const geminiResponse = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
                         temperature: 0.1,
-                        tools: [{ googleSearch: {} }], // Real-time grounding search integration
+                        tools: [{ googleSearch: {} }], // Real-time Search Grounding active
                         safetySettings: [
                             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
                             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -284,4 +285,8 @@ CRITICAL RULES:
         success: true,
         response: aiResponse
     });
+});
+
+app.listen(3000, () => {
+    console.log("Server listening on port 3000");
 });

@@ -164,10 +164,24 @@ const findRealWebImage = async (query) => {
 
         // Manual Quick Auto-Correction for Super-Famous Shortcuts
         const lowerQuery = cleanQuery.toLowerCase();
-        if (lowerQuery.includes("imrn") || lowerQuery.includes("imran") || lowerQuery.includes("imr")) cleanQuery = "Imran Khan";
-        else if (lowerQuery.includes("slman") || lowerQuery.includes("salman") || lowerQuery.includes("slm") || lowerQuery.includes("khn")) cleanQuery = "Salman Khan";
-        else if (lowerQuery.includes("babar") || lowerQuery.includes("bbr")) cleanQuery = "Babar Azam";
-        else if (lowerQuery.includes("sharukh") || lowerQuery.includes("srk") || lowerQuery.includes("shahrukh")) cleanQuery = "Shah Rukh Khan";
+        if (lowerQuery.includes("imrn") || lowerQuery.includes("imran") || lowerQuery.includes("imr")) {
+            cleanQuery = "Imran Khan";
+        } else if (
+            lowerQuery.includes("qaid") || 
+            lowerQuery.includes("quaid") || 
+            lowerQuery.includes("jinnah") || 
+            lowerQuery.includes("qaide azam") || 
+            lowerQuery.includes("quaid e azam") || 
+            lowerQuery.includes("quaid-e-azam")
+        ) {
+            cleanQuery = "Muhammad Ali Jinnah";
+        } else if (lowerQuery.includes("slman") || lowerQuery.includes("salman") || lowerQuery.includes("slm") || lowerQuery.includes("khn")) {
+            cleanQuery = "Salman Khan";
+        } else if (lowerQuery.includes("babar") || lowerQuery.includes("bbr")) {
+            cleanQuery = "Babar Azam";
+        } else if (lowerQuery.includes("sharukh") || lowerQuery.includes("srk") || lowerQuery.includes("shahrukh")) {
+            cleanQuery = "Shah Rukh Khan";
+        }
 
         // Wikipedia Search API call
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*`;

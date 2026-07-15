@@ -1,32 +1,34 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch'); // Ensure fetch is installed (npm i node-fetch)
-const { GoogleGenAI } = require('@google/genai'); // Importing the correct Google Gen AI SDK
+const axios = require('axios'); // Railway safe, no ESM conflicts
+const { GoogleGenAI } = require('@google/genai');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-// Mock Databases for Configuration
+// Port binding for Railway
+const PORT = process.env.PORT || 3000;
+
+// Mock Databases
 const database = {
     users: [],
     conversations: {}
 };
 
-// Replace with your actual Gemini API Key configuration
-const apiKey = process.env.GEMINI_API_KEY || "YOUR_GEMINI_API_KEY"; 
+// API Key configuration (Must be set in Railway variables as GEMINI_API_KEY)
+const apiKey = process.env.GEMINI_API_KEY || "YOUR_FALLBACK_API_KEY"; 
 
-// Initializing the Google GenAI client correctly using your API Key
+// Initialize Google GenAI
 const ai = new GoogleGenAI({ apiKey: apiKey });
 
-// Mock helper function to fetch real web images
+// Real Web Image Finder (Axios Version)
 async function findRealWebImage(query) {
     try {
         if (!query || query.length < 2) return { found: false };
         
-        // Custom search layout logic: You can replace this placeholder with real Google Search custom engine if you have it
-        const encodedQuery = encodeURIComponent(query);
+        // Placeholder image layout - replace with your actual custom search if needed
         const url = `https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=600&auto=format&fit=crop`; 
         
         return {
@@ -60,7 +62,7 @@ app.post('/api/chat', async (req, res) => {
         database.users.push(user);
     }
 
-    // Daily Limit Check for Non-Premium users
+    // Daily Limit Check
     if (!user.isPremium && (mode === "MT Flash" || mode === "MT Pro")) {
         if (user.usedLimit >= 10) {
             return res.json({ 
@@ -85,7 +87,7 @@ app.post('/api/chat', async (req, res) => {
     const imageKeywords = ["image", "photo", "pic", "picture", "tasveer", "taswer"];
     const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
 
-    // Generation Keywords (Create / Make / Draw / Generate)
+    // Generation Keywords
     const generationKeywords = [
         "generate", "banao", "draw", "create", "make", 
         "design", "banaen", "banaon", "creative", "painting"
@@ -98,10 +100,9 @@ app.post('/api/chat', async (req, res) => {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         
         } else if (wantsAiGeneration) {
-            // --- PIPELINE 1: AI IMAGE GENERATION (IMAGEN 3 / FLUX FALLBACK) ---
+            // --- PIPELINE 1: AI IMAGE GENERATION ---
             let cleanGenPrompt = prompt.replace(/\b(generate|banao|draw|create|make|design|banaen|banaon|show me|give me|of|a|an|please|image|photo|pic|picture|tasveer|taswer|ki|ko|mujhe)\b/gi, "").trim();
             
-            // Context Resolver: If prompt is too short, get topic from previous messages
             if (cleanGenPrompt.length < 3 && database.conversations[email].length > 1) {
                 const userMessagesOnly = database.conversations[email]
                     .filter(msg => msg.sender === 'user')
@@ -126,10 +127,9 @@ app.post('/api/chat', async (req, res) => {
             }
 
         } else if (wantsImage) {
-            // --- PIPELINE 2: REAL IMAGE SEARCH (GOOGLE / WEB SEARCH) ---
+            // --- PIPELINE 2: REAL IMAGE SEARCH ---
             let cleanQuery = prompt.replace(/\b(show me|give me|give|do|tasveer|image|photo|pic|of|a|an|please|iski|isiki|it|this|that|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|show|dikhao|dikhana)\b/gi, "").trim();
             
-            // Context Resolver: If user says "iski pic" after a previous discussion
             if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
                 const userMessagesOnly = database.conversations[email]
                     .filter(msg => msg.sender === 'user')
@@ -164,7 +164,7 @@ app.post('/api/chat', async (req, res) => {
             }
 
         } else {
-            // --- PIPELINE 3: GENERAL TEXT CHAT (ENGLISH DEFAULT) ---
+            // --- PIPELINE 3: GENERAL TEXT CHAT ---
             const systemPrompt = `You are MT AI, an elite AI assistant developed by MT.
 
 CRITICAL RULES:
@@ -223,14 +223,13 @@ CRITICAL RULES:
                     throw new Error("Gemini API key is missing.");
                 }
 
-                // Call the correct SDK method on 'ai.models' instance
                 const geminiResponse = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
                         temperature: 0.1,
-                        tools: [{ googleSearch: {} }], // Real-time Search Grounding active
+                        tools: [{ googleSearch: {} }],
                         safetySettings: [
                             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
                             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -249,21 +248,17 @@ CRITICAL RULES:
                 console.warn("⚠️ Gemini routing failed. Loading secure fallback.", geminiError.message);
                 
                 try {
-                    const fallbackFetch = await fetch("https://text.pollinations.ai/", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            messages: [
-                                { role: "system", content: systemPrompt },
-                                { role: "user", content: modifiedPrompt }
-                            ],
-                            model: "openai",
-                            temperature: 0.1
-                        })
+                    const fallbackResponse = await axios.post("https://text.pollinations.ai/", {
+                        messages: [
+                            { role: "system", content: systemPrompt },
+                            { role: "user", content: modifiedPrompt }
+                        ],
+                        model: "openai",
+                        temperature: 0.1
                     });
 
-                    if (fallbackFetch.ok) {
-                        aiResponse = await fallbackFetch.text();
+                    if (fallbackResponse.status === 200) {
+                        aiResponse = fallbackResponse.data;
                     } else {
                         aiResponse = "System is currently busy. Please try again in a moment.";
                     }
@@ -287,6 +282,6 @@ CRITICAL RULES:
     });
 });
 
-app.listen(3000, () => {
-    console.log("Server listening on port 3000");
+app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
 });

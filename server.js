@@ -156,47 +156,52 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- DYNAMIC UNIVERSAL IMAGE RETRIEVER ---
+// --- ULTRA-POWERFUL WIKIPEDIA DYNAMIC IMAGE SCRAPER ---
 const findRealWebImage = async (query) => {
     try {
         let cleanQuery = query.trim().toLowerCase();
-        if (!cleanQuery) return "https://images.unsplash.com/photo-1503023345310-bd7c1de61c7d"; 
+        if (!cleanQuery) return { url: null, realTitle: "", found: false };
 
-        // 1. Universal Auto-Correction System
-        if (cleanQuery.includes("imrn") || cleanQuery.includes("imran") || cleanQuery.includes("imr")) {
-            cleanQuery = "Imran Khan";
-        } else if (cleanQuery.includes("slman") || cleanQuery.includes("salman") || cleanQuery.includes("slm") || cleanQuery.includes("khn")) {
-            cleanQuery = "Salman Khan";
-        } else if (cleanQuery.includes("babar") || cleanQuery.includes("bbr")) {
-            cleanQuery = "Babar Azam";
-        } else if (cleanQuery.includes("sharukh") || cleanQuery.includes("srk") || cleanQuery.includes("shahrukh")) {
-            cleanQuery = "Shah Rukh Khan";
-        } else if (cleanQuery.includes("govinda") || cleanQuery.includes("govnda")) {
-            cleanQuery = "Govinda (actor)"; // Wikipedia optimization
-        }
+        // 1. Manual Quick Auto-Correction for Super-Famous Shortcuts
+        if (cleanQuery.includes("imrn") || cleanQuery.includes("imran") || cleanQuery.includes("imr")) cleanQuery = "Imran Khan";
+        if (cleanQuery.includes("slman") || cleanQuery.includes("salman") || cleanQuery.includes("slm") || cleanQuery.includes("khn")) cleanQuery = "Salman Khan";
+        if (cleanQuery.includes("babar") || cleanQuery.includes("bbr")) cleanQuery = "Babar Azam";
+        if (cleanQuery.includes("sharukh") || cleanQuery.includes("srk") || cleanQuery.includes("shahrukh")) cleanQuery = "Shah Rukh Khan";
 
-        // 2. Capitalize first letters for Wikipedia search format (e.g. Katrina_Kaif)
-        const formattedName = cleanQuery
-            .split(' ')
-            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-            .join('_');
-
-        const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(formattedName)}`;
-        const wikiResponse = await fetch(wikiUrl);
+        // 2. Wikipedia Search API call (This resolves spelling mistakes globally, e.g. "govnda" -> "Govinda")
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*`;
+        const searchResponse = await fetch(searchUrl);
         
-        if (wikiResponse.ok) {
-            const wikiData = await wikiResponse.json();
-            if (wikiData.thumbnail && wikiData.thumbnail.source) {
-                return wikiData.thumbnail.source; // Direct exact portrait from Wikipedia
+        if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
+                // Sahi rectified target page title mil gaya! (e.g. "Govinda (actor)")
+                const matchedTitle = searchData.query.search[0].title;
+
+                // 3. Query details and pageimage/thumbnail URL for the exact matched page title
+                const imageQueryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(matchedTitle)}&prop=pageimages&pithumbsize=600&format=json&origin=*`;
+                const imageResponse = await fetch(imageQueryUrl);
+
+                if (imageResponse.ok) {
+                    const imageData = await imageResponse.json();
+                    const pages = imageData.query.pages;
+                    const pageId = Object.keys(pages)[0];
+
+                    if (pageId && pages[pageId] && pages[pageId].thumbnail && pages[pageId].thumbnail.source) {
+                        return {
+                            url: pages[pageId].thumbnail.source,
+                            realTitle: matchedTitle,
+                            found: true
+                        };
+                    }
+                }
             }
         }
 
-        // 3. Ultimate Fallback: If Wikipedia doesn't have it, generate realistic portrait using AI
-        const searchName = cleanQuery.replace("(actor)", "").trim();
-        return `https://image.pollinations.ai/prompt/${encodeURIComponent(searchName + " realistic portrait photo HD")}?width=512&height=512&nologo=true`;
+        return { url: null, realTitle: query, found: false };
     } catch (e) {
         console.error("Error fetching real image:", e);
-        return `https://image.pollinations.ai/prompt/${encodeURIComponent(query)}?width=512&height=512&nologo=true`;
+        return { url: null, realTitle: query, found: false };
     }
 };
 
@@ -265,23 +270,18 @@ app.post('/api/chat', async (req, res) => {
                 }
             }
 
-            const realImageUrl = await findRealWebImage(cleanQuery);
+            const imageResult = await findRealWebImage(cleanQuery);
             
-            // Format dynamic exact correction name for title
-            let displayName = cleanQuery;
-            const testName = cleanQuery.toLowerCase();
-            if (testName.includes("imrn") || testName.includes("imran") || testName.includes("imr")) displayName = "Imran Khan";
-            else if (testName.includes("slman") || testName.includes("salman") || testName.includes("slm") || testName.includes("khn")) displayName = "Salman Khan";
-            else if (testName.includes("babar") || testName.includes("bbr")) displayName = "Babar Azam";
-            else if (testName.includes("sharukh") || testName.includes("srk") || testName.includes("shahrukh")) displayName = "Shah Rukh Khan";
-            else if (testName.includes("govinda")) displayName = "Govinda";
-            else {
-                // Capitalize user inputted query if not matched
-                displayName = cleanQuery.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            if (imageResult && imageResult.found) {
+                const displayName = imageResult.realTitle;
+                const realImageUrl = imageResult.url;
+                
+                // Response with actual verified image
+                aiResponse = `Ji bilkul! Ye rahi **${displayName}** ki real photo:\n\n![${displayName}](${realImageUrl})\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:350px; height:auto; border-radius:12px; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
+            } else {
+                // Politely handle if no matching public page exists on wikipedia
+                aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public profile photo nahi mil saki. Kya aap kisi aur famous celebrity ya mashhoor cheez ki pic dekhna chahte hain?`;
             }
-
-            // Direct neat bypass template response
-            aiResponse = `Ji bilkul! Ye rahi **${displayName}** ki real photo:\n\n![${displayName}](${realImageUrl})\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:350px; height:auto; border-radius:12px; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
 
         } else {
             // --- NORMAL CHAT PIPELINE (WITH GEMINI) ---

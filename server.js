@@ -156,42 +156,37 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- REAL GOOGLE/WEB IMAGE FINDER (Directly Grabs JPG/PNG without links) ---
+// --- REAL GOOGLE/WEB IMAGE FINDER (Grabs direct image file URLs only) ---
 const findRealWebImage = async (query) => {
     try {
-        const cleanQuery = query.trim();
+        const cleanQuery = query.trim().toLowerCase();
         if (!cleanQuery) return null;
 
-        // DuckDuckGo API to dynamically fetch real-world image hotlinks (works for celebrities like Imran Khan, Salman Khan, cars, etc.)
-        const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQuery)}&format=json&pretty=1`;
-        const response = await fetch(searchUrl);
-        const data = await response.json();
+        // Try getting official image from Wikipedia first (Imran Khan, Salman Khan, etc.)
+        const formattedName = cleanQuery
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join('_');
 
-        // Agar DuckDuckGo par official image mil jaye (usually highly accurate celebrities)
-        if (data.Image && data.Image.startsWith('http')) {
-            return data.Image;
-        }
-
-        // Backup 1: Wikipedia dynamic rendering (For most famous people and places)
-        const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery.replace(/\s+/g, '_'))}`;
+        const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(formattedName)}`;
         const wikiResponse = await fetch(wikiUrl);
+        
         if (wikiResponse.ok) {
             const wikiData = await wikiResponse.json();
             if (wikiData.thumbnail && wikiData.thumbnail.source) {
-                return wikiData.thumbnail.source;
+                return wikiData.thumbnail.source; // Perfect direct .jpg/png URL
             }
         }
 
-        // Backup 2: Quick stock photo direct hotlink (For generic queries like "laptop", "cat", etc.)
+        // Fallback to high quality direct static image query
         return `https://images.unsplash.com/featured/?${encodeURIComponent(cleanQuery)}`;
     } catch (e) {
         console.error("Error fetching real image:", e);
-        // Safest free AI drawing backup in case search is blocked
         return `https://image.pollinations.ai/prompt/${encodeURIComponent(query)}?width=512&height=512&nologo=true`;
     }
 };
 
-// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE (Advanced Smart Integration)
+// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE
 app.post('/api/chat', async (req, res) => {
     const { 
         email = 'guest@example.com', 
@@ -245,7 +240,7 @@ app.post('/api/chat', async (req, res) => {
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
-                        systemInstruction: "You are MT AI, a highly advanced, ultra-intelligent bilingual virtual assistant. Give detailed, smart, helpful and extremely creative responses in Urdu (Roman or Nastaliq) or English. Keep a friendly, genius-like personality.",
+                        systemInstruction: "You are MT AI, an advanced AI virtual assistant. Reply naturally in Urdu/English. If user asks to search or see a celebrity's/item's photo, do NOT generate tables, do NOT give source information, do NOT explain how to download it. Simply talk nicely and let the system fetch the photo.",
                         temperature: 0.7
                     }
                 });
@@ -267,7 +262,7 @@ app.post('/api/chat', async (req, res) => {
                 const systemInstructions = "System: You are MT AI, an ultra-intelligent AI assistant. Provide highly detailed, deep, and complete responses without summarizing too much. Reply naturally in Urdu/English.";
                 const fullPayload = `${systemInstructions}\n\n${chatScript}\nAssistant:`;
 
-                const fallbackFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}`);
+                const fallbackFetch = await fetch://text.pollinations.ai/${encodeURIComponent(fullPayload)});
                 if (fallbackFetch.ok) {
                     aiResponse = await fallbackFetch.text();
                 } else {
@@ -291,18 +286,15 @@ app.post('/api/chat', async (req, res) => {
                 
                 if (userMessagesOnly.length >= 2) {
                     const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki)/gi, "").trim();
+                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe)/gi, "").trim();
                 }
             }
 
-            // Real celebrity/object image URL directly from search APIs
+            // Real celebrity/object image URL directly from Wikipedia/Unsplash
             const realImageUrl = await findRealWebImage(cleanQuery);
 
-            // Directly inject Image tag so the UI renders it automatically
-            aiResponse += `<br><br><div style="margin-top: 15px; text-align: center;">
-                <strong style="display: block; margin-bottom: 8px;">🔍 Real-world photo of "${cleanQuery}":</strong>
-                <img src="${realImageUrl}" alt="${cleanQuery}" style="max-width: 100%; width: 350px; height: auto; border-radius: 12px; border: 2px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />
-            </div>`;
+            // Directly inject clean Markdown Image format + HTML backup to make sure the chat box parses it
+            aiResponse += `\n\n![${cleanQuery}](${realImageUrl})\n\n<img src="${realImageUrl}" alt="${cleanQuery}" style="max-width:100%; width:350px; height:auto; border-radius:12px; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
         }
 
     } catch (error) {

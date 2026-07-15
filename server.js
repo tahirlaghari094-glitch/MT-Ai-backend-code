@@ -1,3 +1,4 @@
+
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -299,9 +300,14 @@ app.post('/api/chat', async (req, res) => {
 
         } else {
             // --- NORMAL CHAT PIPELINE ---
-            const conversationHistory = database.conversations[email].slice(-6); // History limited to avoid carrying over old bugs
+            const conversationHistory = database.conversations[email].slice(-6); // Limit history to prevent old text bugs
             
-            const systemPrompt = "You are MT AI, a strictly professional virtual assistant. ALWAYS reply in Roman Urdu. Provide 100% factually true and historically correct information. Imran Khan is ALIVE and currently in prison (Adiala Jail). He was born on 5 October 1952. He graduated from Keble College, Oxford in 1975 (Philosophy, Politics, Economics). He won the 1992 Cricket World Cup (Wasim Akram was Man of the Match in the final). His political party is PTI, founded in 1996. He became Prime Minister on 18 August 2018 until April 2022. Shaukat Khanum Lahore opened in 1994. NEVER invent fake news, fake deaths, or wrong dates. Be helpful, natural, and accurate.";
+            // Strict System Instruction to prevent any hallucination or fake facts
+            const systemPrompt = `You are MT AI, an advanced virtual assistant developed by MT. ALWAYS reply in natural Roman Urdu. 
+You must NEVER invent fake facts or dates. Follow these rules strictly:
+1. Quaid-e-Azam Muhammad Ali Jinnah is Pakistan's first Governor-General (NOT President/Rashtrapati). He was born on 25 December 1876 and passed away on 11 September 1948 (NOT August). He joined the Congress in 1906 and All India Muslim League in 1913. He presented Lahore Resolution (Qarardad-e-Pakistan) in March 1940 (NOT Cricket Club).
+2. Imran Khan is ALIVE and currently in Adiala Jail. He was born on 5 October 1952. He won the 1992 Cricket World Cup (Wasim Akram was Man of the Match). His political party is PTI, founded in 1996. He became Prime Minister on 18 August 2018 until April 2022. Shaukat Khanum Lahore opened in 1994.
+3. Keep the tone friendly, and refuse politely if you do not know a historical fact instead of hallucinating wrong details.`;
 
             try {
                 if (!apiKey) {
@@ -318,7 +324,7 @@ app.post('/api/chat', async (req, res) => {
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.1 // Lowest temperature for factual consistency
+                        temperature: 0.1 // Safest temperature to enforce factual precision
                     }
                 });
 
@@ -331,14 +337,17 @@ app.post('/api/chat', async (req, res) => {
                 console.warn("⚠️ Gemini failed or inactive. Using safe fallback.", geminiError.message);
                 
                 try {
-                    // Using structured POST call for Pollinations to strictly respect system instruction
+                    // Safe structured fallback payload that enforces the exact system instructions
                     const fallbackFetch = await fetch("https://text.pollinations.ai/", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             messages: [
                                 { role: "system", content: systemPrompt },
-                                { role: "user", content: prompt }
+                                ...conversationHistory.map(msg => ({
+                                    role: msg.sender === 'user' ? "user" : "assistant",
+                                    content: msg.content
+                                }))
                             ],
                             model: "openai",
                             temperature: 0.1
@@ -346,10 +355,9 @@ app.post('/api/chat', async (req, res) => {
                     });
 
                     if (fallbackFetch.ok) {
-                        const fallbackData = await fallbackFetch.text();
-                        aiResponse = fallbackData;
+                        aiResponse = await fallbackFetch.text();
                     } else {
-                        aiResponse = "Maazrat! System is waqt load nahi ho pa raha. Baraye meharbani page refresh kar ke dobara koshish karein.";
+                        aiResponse = "Maazrat! System is waqt thoda load nahi le raha. Baraye meharbani kuch deir baad koshish karein.";
                     }
                 } catch (fallbackErr) {
                     aiResponse = "System temporarily unavailable. Please try again in a few moments.";

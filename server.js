@@ -82,7 +82,7 @@ app.post('/api/auth/login', (req, res) => {
     }
 });
 
-// 3. ACCOUNT: LIMIT INQUIPLNE
+// 3. ACCOUNT: LIMIT INQUIRY PIPELINE
 app.get('/api/user/limits', (req, res) => {
     const { email } = req.query;
     const user = database.users.find(u => u.email === email);
@@ -156,19 +156,19 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- GOOGLE/WIKIPEDIA REAL IMAGE RETRIEVER (No API Key needed) ---
+// --- GOOGLE/WIKIPEDIA REAL IMAGE RETRIEVER ---
 const findRealWebImage = async (query) => {
     try {
         let cleanQuery = query.trim().toLowerCase();
         if (!cleanQuery) return null;
 
-        // Auto Correction to proper search terms
+        // Auto Correction for common spellings
         if (cleanQuery.includes("imrn") || cleanQuery.includes("imran")) cleanQuery = "Imran Khan";
         if (cleanQuery.includes("slman") || cleanQuery.includes("salman")) cleanQuery = "Salman Khan";
         if (cleanQuery.includes("babar") || cleanQuery.includes("bbr")) cleanQuery = "Babar Azam";
         if (cleanQuery.includes("sharukh") || cleanQuery.includes("srk") || cleanQuery.includes("shahrukh")) cleanQuery = "Shah Rukh Khan";
 
-        // Try Wiki Search (Highly accurate for public figures/celebrities)
+        // Step 1: Capitalize words for Wikipedia API format
         const formattedName = cleanQuery
             .split(' ')
             .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -180,11 +180,11 @@ const findRealWebImage = async (query) => {
         if (wikiResponse.ok) {
             const wikiData = await wikiResponse.json();
             if (wikiData.thumbnail && wikiData.thumbnail.source) {
-                return wikiData.thumbnail.source;
+                return wikiData.thumbnail.source; // Direct exact portrait from Wikipedia
             }
         }
 
-        // Quick Fallback for everything else (nature, cars, custom objects)
+        // Step 2: Fallback to Unsplash if Wikipedia thumbnail doesn't exist
         return `https://images.unsplash.com/featured/?${encodeURIComponent(cleanQuery)}`;
     } catch (e) {
         console.error("Error fetching real image:", e);
@@ -229,35 +229,50 @@ app.post('/api/chat', async (req, res) => {
 
     let aiResponse = "";
 
-    // Check if the user is asking for an image
+    // Check if the user is asking for an image/photo/tasveer
     const promptLower = prompt.toLowerCase();
-    const imageKeywords = ["image", "photo", "picture", "draw", "tasveer", "show", "create", "generate", "look like", "pic", "photos", "dikhao", "banao", "pic", "dp", "pic", "dikhayein"];
+    const imageKeywords = ["image", "photo", "picture", "draw", "tasveer", "show", "create", "generate", "look like", "pic", "photos", "dikhao", "banao", "pic", "dp", "dikhayein"];
     const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
 
     try {
         if (pinnedFile) {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
+        } else if (wantsImage) {
+            // --- STRICT BYPASS PATH FOR IMAGES ---
+            // Gemini is completely skipped for text generation here to bypass policy refusal entirely!
+            let cleanQuery = prompt.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki)/gi, "").trim();
+            
+            if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
+                const userMessagesOnly = database.conversations[email]
+                    .filter(msg => msg.sender === 'user')
+                    .map(msg => msg.content);
+                
+                if (userMessagesOnly.length >= 2) {
+                    const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
+                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki)/gi, "").trim();
+                }
+            }
+
+            const realImageUrl = await findRealWebImage(cleanQuery);
+            
+            // Send direct, clean response without Gemini even processing it
+            aiResponse = `Ji bilkul! Ye rahi **${cleanQuery}** ki real photo:\n\n![${cleanQuery}](${realImageUrl})\n\n<img src="${realImageUrl}" alt="${cleanQuery}" style="max-width:100%; width:350px; height:auto; border-radius:12px; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
+
         } else {
+            // Normal Chat flow with Gemini
             const conversationHistory = database.conversations[email].slice(-10);
             
             try {
-                // Step A: Google Gemini Model with strict Bypass instruction
                 const contents = conversationHistory.map(msg => ({
                     role: msg.sender === 'user' ? 'user' : 'model',
                     parts: [{ text: msg.content || ' ' }]
                 }));
 
-                // Strict Instruction: If asking for an image, give a 1-sentence quick friendly reply. No policy lectures!
-                let systemInstruction = "You are MT AI, an advanced virtual assistant. Reply naturally in Urdu/English.";
-                if (wantsImage) {
-                    systemInstruction = "You are MT AI. The user is asking to see a photo/image. Your ONLY job is to write a one-sentence polite confirmation in Urdu or English like: 'Ji bilkul, ye rahi unki tasveer:' or 'Sure! Here is the photo you requested:'. DO NOT say you cannot show images, do NOT write long biographies, do NOT mention safety guidelines, do NOT write bullet points or tables. Just write one sweet line.";
-                }
-
                 const geminiResponse = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
-                        systemInstruction: systemInstruction,
+                        systemInstruction: "You are MT AI, an advanced virtual assistant. Reply naturally in Urdu/English.",
                         temperature: 0.7
                     }
                 });
@@ -285,28 +300,6 @@ app.post('/api/chat', async (req, res) => {
                     aiResponse = "Apologies, the backup system is busy. Please try again in a few moments.";
                 }
             }
-        }
-
-        // --- DYNAMIC WEB IMAGE SEARCH INTEGRATION ---
-        if (wantsImage) {
-            let cleanQuery = prompt.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki)/gi, "").trim();
-            
-            if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
-                const userMessagesOnly = database.conversations[email]
-                    .filter(msg => msg.sender === 'user')
-                    .map(msg => msg.content);
-                
-                if (userMessagesOnly.length >= 2) {
-                    const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki)/gi, "").trim();
-                }
-            }
-
-            // Real celebrity/object image URL directly from Wikipedia/Unsplash with Auto-Correction
-            const realImageUrl = await findRealWebImage(cleanQuery);
-
-            // Directly inject clean Markdown Image format + HTML backup to make sure the chat box parses it
-            aiResponse += `\n\n![${cleanQuery}](${realImageUrl})\n\n<img src="${realImageUrl}" alt="${cleanQuery}" style="max-width:100%; width:350px; height:auto; border-radius:12px; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
         }
 
     } catch (error) {

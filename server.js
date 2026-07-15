@@ -156,7 +156,7 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- GOOGLE IMAGEN 3 IMAGE GENERATOR ---
+// --- GOOGLE IMAGEN 3 IMAGE GENERATOR WITH UNLIMITED FALLBACK ---
 const generateImagen3Image = async (query) => {
     try {
         const enhancedPrompt = `Highly detailed photo, realistic rendering of ${query}, cinematic lighting, 8k resolution, masterpiece, professional photography`;
@@ -177,13 +177,14 @@ const generateImagen3Image = async (query) => {
         }
         throw new Error("No image data returned from Google API");
     } catch (error) {
-        console.error("Imagen 3 generation error, falling back:", error);
+        console.warn("⚠️ Imagen 3 limit hit, switching to Pollinations Unlimited Engine...", error);
+        // Fallback: Agar Google limit hit ho jaye, to bina error ke automatic high quality free link return hogi
         const searchKeyword = query ? encodeURIComponent(query) : "amazing-portrait";
         return `https://image.pollinations.ai/prompt/${searchKeyword}?width=512&height=512&nologo=true&private=true`;
     }
 };
 
-// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE (Gemini Integration)
+// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE (Gemini Integration + Auto Fallback for Unlimited)
 app.post('/api/chat', async (req, res) => {
     const { 
         email = 'guest@example.com', 
@@ -226,25 +227,44 @@ app.post('/api/chat', async (req, res) => {
         } else {
             const conversationHistory = database.conversations[email].slice(-10);
             
-            // Safe mapping format for Gemini SDK contents
-            const contents = conversationHistory.map(msg => ({
-                role: msg.sender === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content || ' ' }]
-            }));
+            try {
+                // Step A: Google Gemini Model Try Karein
+                const contents = conversationHistory.map(msg => ({
+                    role: msg.sender === 'user' ? 'user' : 'model',
+                    parts: [{ text: msg.content || ' ' }]
+                }));
 
-            // API Call with exact SDK params
-            const geminiResponse = await ai.models.generateContent({
-                model: 'gemini-2.0-flash',
-                contents: contents,
-                config: {
-                    systemInstruction: "You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks."
+                const geminiResponse = await ai.models.generateContent({
+                    model: 'gemini-2.0-flash',
+                    contents: contents,
+                    config: {
+                        systemInstruction: "You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks."
+                    }
+                });
+
+                if (geminiResponse && geminiResponse.text) {
+                    aiResponse = geminiResponse.text;
+                } else {
+                    throw new Error("Empty Gemini Response");
                 }
-            });
+            } catch (geminiError) {
+                console.warn("⚠️ Gemini 2.0 Free quota exceeded, activating Free Unlimited backup engine!");
+                
+                // Step B: Back-up Fallback System (Pollinations AI for Unlimited FREE Answers)
+                const chatScript = conversationHistory.map(msg => {
+                    const senderName = msg.sender === 'user' ? 'User' : 'Assistant';
+                    return `${senderName}: ${msg.content}`;
+                }).join('\n');
 
-            if (geminiResponse && geminiResponse.text) {
-                aiResponse = geminiResponse.text;
-            } else {
-                aiResponse = "Mujhe response generate karne me thora masla hua. Dobara koshish karein.";
+                const systemInstructions = "System: You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks.";
+                const fullPayload = `${systemInstructions}\n\n${chatScript}\nAssistant:`;
+
+                const fallbackFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}`);
+                if (fallbackFetch.ok) {
+                    aiResponse = await fallbackFetch.text();
+                } else {
+                    aiResponse = "Apologies, the backup system is busy. Please try again in a few moments.";
+                }
             }
         }
 
@@ -277,7 +297,7 @@ app.post('/api/chat', async (req, res) => {
 
     } catch (error) {
         console.error("AI Generation Error details:", error);
-        aiResponse = `System integration error: ${error.message || "Please check backend environment configurations."}`;
+        aiResponse = "Server connection lost. Please check your internet or retry.";
     }
 
     database.conversations[email].push({ sender: 'ai', content: aiResponse });

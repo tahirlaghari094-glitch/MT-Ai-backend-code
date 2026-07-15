@@ -82,7 +82,7 @@ app.post('/api/auth/login', (req, res) => {
     }
 });
 
-// 3. ACCOUNT: LIMIT INQUIRY PIPELINE
+// 3. ACCOUNT: LIMIT INQUIPLNE
 app.get('/api/user/limits', (req, res) => {
     const { email } = req.query;
     const user = database.users.find(u => u.email === email);
@@ -156,26 +156,19 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- SMART SPELLING CORRECTOR & REAL IMAGE FINDER ---
+// --- GOOGLE/WIKIPEDIA REAL IMAGE RETRIEVER (No API Key needed) ---
 const findRealWebImage = async (query) => {
     try {
         let cleanQuery = query.trim().toLowerCase();
         if (!cleanQuery) return null;
 
-        // Auto spelling correction for famous queries
-        if (cleanQuery.includes("imrn") || cleanQuery.includes("imran") || cleanQuery.includes("khan")) {
-            if (cleanQuery.includes("imrn") || cleanQuery.includes("imran")) {
-                cleanQuery = "Imran Khan";
-            }
-        }
-        if (cleanQuery.includes("salman") || cleanQuery.includes("slman")) {
-            cleanQuery = "Salman Khan";
-        }
-        if (cleanQuery.includes("babar") || cleanQuery.includes("bbr")) {
-            cleanQuery = "Babar Azam";
-        }
+        // Auto Correction to proper search terms
+        if (cleanQuery.includes("imrn") || cleanQuery.includes("imran")) cleanQuery = "Imran Khan";
+        if (cleanQuery.includes("slman") || cleanQuery.includes("salman")) cleanQuery = "Salman Khan";
+        if (cleanQuery.includes("babar") || cleanQuery.includes("bbr")) cleanQuery = "Babar Azam";
+        if (cleanQuery.includes("sharukh") || cleanQuery.includes("srk") || cleanQuery.includes("shahrukh")) cleanQuery = "Shah Rukh Khan";
 
-        // Try getting official image from Wikipedia API (highly accurate for celebrities)
+        // Try Wiki Search (Highly accurate for public figures/celebrities)
         const formattedName = cleanQuery
             .split(' ')
             .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -187,11 +180,11 @@ const findRealWebImage = async (query) => {
         if (wikiResponse.ok) {
             const wikiData = await wikiResponse.json();
             if (wikiData.thumbnail && wikiData.thumbnail.source) {
-                return wikiData.thumbnail.source; // Perfect direct actual Wikipedia .jpg file
+                return wikiData.thumbnail.source;
             }
         }
 
-        // Fallback to high quality direct static image query if not a celebrity
+        // Quick Fallback for everything else (nature, cars, custom objects)
         return `https://images.unsplash.com/featured/?${encodeURIComponent(cleanQuery)}`;
     } catch (e) {
         console.error("Error fetching real image:", e);
@@ -236,6 +229,11 @@ app.post('/api/chat', async (req, res) => {
 
     let aiResponse = "";
 
+    // Check if the user is asking for an image
+    const promptLower = prompt.toLowerCase();
+    const imageKeywords = ["image", "photo", "picture", "draw", "tasveer", "show", "create", "generate", "look like", "pic", "photos", "dikhao", "banao", "pic", "dp", "pic", "dikhayein"];
+    const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
+
     try {
         if (pinnedFile) {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
@@ -249,11 +247,17 @@ app.post('/api/chat', async (req, res) => {
                     parts: [{ text: msg.content || ' ' }]
                 }));
 
+                // Strict Instruction: If asking for an image, give a 1-sentence quick friendly reply. No policy lectures!
+                let systemInstruction = "You are MT AI, an advanced virtual assistant. Reply naturally in Urdu/English.";
+                if (wantsImage) {
+                    systemInstruction = "You are MT AI. The user is asking to see a photo/image. Your ONLY job is to write a one-sentence polite confirmation in Urdu or English like: 'Ji bilkul, ye rahi unki tasveer:' or 'Sure! Here is the photo you requested:'. DO NOT say you cannot show images, do NOT write long biographies, do NOT mention safety guidelines, do NOT write bullet points or tables. Just write one sweet line.";
+                }
+
                 const geminiResponse = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
-                        systemInstruction: "You are MT AI, an advanced virtual assistant. IMPORTANT RULE: If the user asks for a photo, image, pic, or tasveer of Imran Khan, Salman Khan, or any person, do NOT say 'I cannot show pictures/apologize'. Instead, reply nicely in Urdu/English with a friendly statement like: 'Haan ji, bilkul! Ye rahi unki tasveer:' or 'Here is the real photo of them:'. Do not mention safety limits or guide them to download. The backend will automatically inject the photo.",
+                        systemInstruction: systemInstruction,
                         temperature: 0.7
                     }
                 });
@@ -284,10 +288,6 @@ app.post('/api/chat', async (req, res) => {
         }
 
         // --- DYNAMIC WEB IMAGE SEARCH INTEGRATION ---
-        const promptLower = prompt.toLowerCase();
-        const imageKeywords = ["image", "photo", "picture", "draw", "tasveer", "show", "create", "generate", "look like", "pic", "photos", "dikhao", "banao", "pic", "dp", "pic"];
-        const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
-
         if (wantsImage) {
             let cleanQuery = prompt.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki)/gi, "").trim();
             
@@ -298,7 +298,7 @@ app.post('/api/chat', async (req, res) => {
                 
                 if (userMessagesOnly.length >= 2) {
                     const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe)/gi, "").trim();
+                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki)/gi, "").trim();
                 }
             }
 

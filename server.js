@@ -156,13 +156,26 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- REAL GOOGLE/WEB IMAGE FINDER (Grabs direct image file URLs only) ---
+// --- SMART SPELLING CORRECTOR & REAL IMAGE FINDER ---
 const findRealWebImage = async (query) => {
     try {
-        const cleanQuery = query.trim().toLowerCase();
+        let cleanQuery = query.trim().toLowerCase();
         if (!cleanQuery) return null;
 
-        // Try getting official image from Wikipedia first (Imran Khan, Salman Khan, etc.)
+        // Auto spelling correction for famous queries
+        if (cleanQuery.includes("imrn") || cleanQuery.includes("imran") || cleanQuery.includes("khan")) {
+            if (cleanQuery.includes("imrn") || cleanQuery.includes("imran")) {
+                cleanQuery = "Imran Khan";
+            }
+        }
+        if (cleanQuery.includes("salman") || cleanQuery.includes("slman")) {
+            cleanQuery = "Salman Khan";
+        }
+        if (cleanQuery.includes("babar") || cleanQuery.includes("bbr")) {
+            cleanQuery = "Babar Azam";
+        }
+
+        // Try getting official image from Wikipedia API (highly accurate for celebrities)
         const formattedName = cleanQuery
             .split(' ')
             .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -174,11 +187,11 @@ const findRealWebImage = async (query) => {
         if (wikiResponse.ok) {
             const wikiData = await wikiResponse.json();
             if (wikiData.thumbnail && wikiData.thumbnail.source) {
-                return wikiData.thumbnail.source; // Perfect direct .jpg/png URL
+                return wikiData.thumbnail.source; // Perfect direct actual Wikipedia .jpg file
             }
         }
 
-        // Fallback to high quality direct static image query
+        // Fallback to high quality direct static image query if not a celebrity
         return `https://images.unsplash.com/featured/?${encodeURIComponent(cleanQuery)}`;
     } catch (e) {
         console.error("Error fetching real image:", e);
@@ -230,7 +243,7 @@ app.post('/api/chat', async (req, res) => {
             const conversationHistory = database.conversations[email].slice(-10);
             
             try {
-                // Step A: Google Gemini Model
+                // Step A: Google Gemini Model with strict Bypass instruction
                 const contents = conversationHistory.map(msg => ({
                     role: msg.sender === 'user' ? 'user' : 'model',
                     parts: [{ text: msg.content || ' ' }]
@@ -240,7 +253,7 @@ app.post('/api/chat', async (req, res) => {
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
-                        systemInstruction: "You are MT AI, an advanced AI virtual assistant. Reply naturally in Urdu/English. If user asks to search or see a celebrity's/item's photo, do NOT generate tables, do NOT give source information, do NOT explain how to download it. Simply talk nicely and let the system fetch the photo.",
+                        systemInstruction: "You are MT AI, an advanced virtual assistant. IMPORTANT RULE: If the user asks for a photo, image, pic, or tasveer of Imran Khan, Salman Khan, or any person, do NOT say 'I cannot show pictures/apologize'. Instead, reply nicely in Urdu/English with a friendly statement like: 'Haan ji, bilkul! Ye rahi unki tasveer:' or 'Here is the real photo of them:'. Do not mention safety limits or guide them to download. The backend will automatically inject the photo.",
                         temperature: 0.7
                     }
                 });
@@ -251,15 +264,14 @@ app.post('/api/chat', async (req, res) => {
                     throw new Error("Empty Gemini Response");
                 }
             } catch (geminiError) {
-                console.warn("⚠️ Gemini 2.0 Free quota exceeded, activating Free Unlimited backup engine!");
+                console.warn("⚠️ Gemini 2.0 Free quota exceeded, activating backup!");
                 
-                // Step B: Back-up Fallback System
                 const chatScript = conversationHistory.map(msg => {
                     const senderName = msg.sender === 'user' ? 'User' : 'Assistant';
                     return `${senderName}: ${msg.content}`;
                 }).join('\n');
 
-                const systemInstructions = "System: You are MT AI, an ultra-intelligent AI assistant. Provide highly detailed, deep, and complete responses without summarizing too much. Reply naturally in Urdu/English.";
+                const systemInstructions = "System: You are MT AI, an ultra-intelligent AI assistant. Reply naturally in Urdu/English.";
                 const fullPayload = `${systemInstructions}\n\n${chatScript}\nAssistant:`;
 
                 const fallbackFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}`);
@@ -286,11 +298,11 @@ app.post('/api/chat', async (req, res) => {
                 
                 if (userMessagesOnly.length >= 2) {
                     const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki)/gi, "").trim();
+                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe)/gi, "").trim();
                 }
             }
 
-            // Real celebrity/object image URL directly from Wikipedia/Unsplash
+            // Real celebrity/object image URL directly from Wikipedia/Unsplash with Auto-Correction
             const realImageUrl = await findRealWebImage(cleanQuery);
 
             // Directly inject clean Markdown Image format + HTML backup to make sure the chat box parses it

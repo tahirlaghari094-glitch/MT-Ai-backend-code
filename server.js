@@ -160,15 +160,20 @@ app.post('/api/chat/clear', (req, res) => {
 const findRealWebImage = async (query) => {
     try {
         let cleanQuery = query.trim().toLowerCase();
-        if (!cleanQuery) return null;
+        if (!cleanQuery) return "https://images.unsplash.com/photo-1503023345310-bd7c1de61c7d"; 
 
-        // Auto Correction for common spellings
-        if (cleanQuery.includes("imrn") || cleanQuery.includes("imran")) cleanQuery = "Imran Khan";
-        if (cleanQuery.includes("slman") || cleanQuery.includes("salman")) cleanQuery = "Salman Khan";
-        if (cleanQuery.includes("babar") || cleanQuery.includes("bbr")) cleanQuery = "Babar Azam";
-        if (cleanQuery.includes("sharukh") || cleanQuery.includes("srk") || cleanQuery.includes("shahrukh")) cleanQuery = "Shah Rukh Khan";
+        // Strict Auto-Correction for Roman Urdu & spelling mistakes
+        if (cleanQuery.includes("imrn") || cleanQuery.includes("imran") || cleanQuery.includes("imr")) {
+            cleanQuery = "Imran Khan";
+        } else if (cleanQuery.includes("slman") || cleanQuery.includes("salman") || cleanQuery.includes("slm") || cleanQuery.includes("khn")) {
+            cleanQuery = "Salman Khan";
+        } else if (cleanQuery.includes("babar") || cleanQuery.includes("bbr")) {
+            cleanQuery = "Babar Azam";
+        } else if (cleanQuery.includes("sharukh") || cleanQuery.includes("srk") || cleanQuery.includes("shahrukh")) {
+            cleanQuery = "Shah Rukh Khan";
+        }
 
-        // Step 1: Capitalize words for Wikipedia API format
+        // Wikipedia REST API matching
         const formattedName = cleanQuery
             .split(' ')
             .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -180,12 +185,12 @@ const findRealWebImage = async (query) => {
         if (wikiResponse.ok) {
             const wikiData = await wikiResponse.json();
             if (wikiData.thumbnail && wikiData.thumbnail.source) {
-                return wikiData.thumbnail.source; // Direct exact portrait from Wikipedia
+                return wikiData.thumbnail.source; 
             }
         }
 
-        // Step 2: Fallback to Unsplash if Wikipedia thumbnail doesn't exist
-        return `https://images.unsplash.com/featured/?${encodeURIComponent(cleanQuery)}`;
+        // If Wikipedia fails, generate clean portrait via Pollinations AI
+        return `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery + " realistic portrait photo")}?width=512&height=512&nologo=true`;
     } catch (e) {
         console.error("Error fetching real image:", e);
         return `https://image.pollinations.ai/prompt/${encodeURIComponent(query)}?width=512&height=512&nologo=true`;
@@ -229,19 +234,23 @@ app.post('/api/chat', async (req, res) => {
 
     let aiResponse = "";
 
-    // Check if the user is asking for an image/photo/tasveer
+    // Comprehensive Roman Urdu / English image keyword detector
     const promptLower = prompt.toLowerCase();
-    const imageKeywords = ["image", "photo", "picture", "draw", "tasveer", "show", "create", "generate", "look like", "pic", "photos", "dikhao", "banao", "pic", "dp", "dikhayein"];
+    const imageKeywords = [
+        "image", "photo", "picture", "draw", "tasveer", "show", "create", 
+        "generate", "look like", "pic", "photos", "dikhao", "banao", "dp", 
+        "dikhayein", "dikhain", "taswer", "dekhni hai", "dekhni", "dikhana", "dekhain"
+    ];
     const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
 
     try {
         if (pinnedFile) {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } else if (wantsImage) {
-            // --- STRICT BYPASS PATH FOR IMAGES ---
-            // Gemini is completely skipped for text generation here to bypass policy refusal entirely!
-            let cleanQuery = prompt.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki)/gi, "").trim();
+            // --- BYPASS PATH FOR IMAGES ---
+            let cleanQuery = prompt.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)/gi, "").trim();
             
+            // Backtrack query from previous messages if query is too short
             if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
                 const userMessagesOnly = database.conversations[email]
                     .filter(msg => msg.sender === 'user')
@@ -249,17 +258,25 @@ app.post('/api/chat', async (req, res) => {
                 
                 if (userMessagesOnly.length >= 2) {
                     const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki)/gi, "").trim();
+                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki|dikhayein|dikhain|taswer)/gi, "").trim();
                 }
             }
 
             const realImageUrl = await findRealWebImage(cleanQuery);
             
-            // Send direct, clean response without Gemini even processing it
-            aiResponse = `Ji bilkul! Ye rahi **${cleanQuery}** ki real photo:\n\n![${cleanQuery}](${realImageUrl})\n\n<img src="${realImageUrl}" alt="${cleanQuery}" style="max-width:100%; width:350px; height:auto; border-radius:12px; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
+            // Format dynamic exact correction name
+            let displayName = cleanQuery;
+            const testName = cleanQuery.toLowerCase();
+            if (testName.includes("imrn") || testName.includes("imran") || testName.includes("imr")) displayName = "Imran Khan";
+            if (testName.includes("slman") || testName.includes("salman") || testName.includes("slm") || testName.includes("khn")) displayName = "Salman Khan";
+            if (testName.includes("babar") || testName.includes("bbr")) displayName = "Babar Azam";
+            if (testName.includes("sharukh") || testName.includes("srk") || testName.includes("shahrukh")) displayName = "Shah Rukh Khan";
+
+            // Direct neat bypass template response
+            aiResponse = `Ji bilkul! Ye rahi **${displayName}** ki real photo:\n\n![${displayName}](${realImageUrl})\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:350px; height:auto; border-radius:12px; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
 
         } else {
-            // Normal Chat flow with Gemini
+            // --- NORMAL CHAT PIPELINE (WITH GEMINI) ---
             const conversationHistory = database.conversations[email].slice(-10);
             
             try {

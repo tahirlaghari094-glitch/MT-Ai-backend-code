@@ -159,14 +159,15 @@ app.post('/api/chat/clear', (req, res) => {
 // --- ULTRA-POWERFUL WIKIPEDIA DYNAMIC IMAGE SCRAPER ---
 const findRealWebImage = async (query) => {
     try {
-        let cleanQuery = query.trim().toLowerCase();
+        let cleanQuery = query.trim();
         if (!cleanQuery) return { url: null, realTitle: "", found: false };
 
         // 1. Manual Quick Auto-Correction for Super-Famous Shortcuts
-        if (cleanQuery.includes("imrn") || cleanQuery.includes("imran") || cleanQuery.includes("imr")) cleanQuery = "Imran Khan";
-        if (cleanQuery.includes("slman") || cleanQuery.includes("salman") || cleanQuery.includes("slm") || cleanQuery.includes("khn")) cleanQuery = "Salman Khan";
-        if (cleanQuery.includes("babar") || cleanQuery.includes("bbr")) cleanQuery = "Babar Azam";
-        if (cleanQuery.includes("sharukh") || cleanQuery.includes("srk") || cleanQuery.includes("shahrukh")) cleanQuery = "Shah Rukh Khan";
+        const lowerQuery = cleanQuery.toLowerCase();
+        if (lowerQuery.includes("imrn") || lowerQuery.includes("imran") || lowerQuery.includes("imr")) cleanQuery = "Imran Khan";
+        else if (lowerQuery.includes("slman") || lowerQuery.includes("salman") || lowerQuery.includes("slm") || lowerQuery.includes("khn")) cleanQuery = "Salman Khan";
+        else if (lowerQuery.includes("babar") || lowerQuery.includes("bbr")) cleanQuery = "Babar Azam";
+        else if (lowerQuery.includes("sharukh") || lowerQuery.includes("srk") || lowerQuery.includes("shahrukh")) cleanQuery = "Shah Rukh Khan";
 
         // 2. Wikipedia Search API call (This resolves spelling mistakes globally, e.g. "govnda" -> "Govinda")
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*`;
@@ -255,8 +256,8 @@ app.post('/api/chat', async (req, res) => {
         if (pinnedFile) {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } else if (wantsImage) {
-            // --- BYPASS PATH FOR ALL IMAGES ---
-            let cleanQuery = prompt.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)/gi, "").trim();
+            // --- BYPASS PATH FOR ALL IMAGES (SAFE CLEANING WITH WORD BOUNDARIES) ---
+            let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
             
             // Backtrack query from previous messages if query is too short
             if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
@@ -266,9 +267,12 @@ app.post('/api/chat', async (req, res) => {
                 
                 if (userMessagesOnly.length >= 2) {
                     const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki|dikhayein|dikhain|taswer)/gi, "").trim();
+                    cleanQuery = lastTopic.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki|dikhayein|dikhain|taswer)\b/gi, "").trim();
                 }
             }
+
+            // Cleaning extra punctuation marks safely
+            cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
 
             const imageResult = await findRealWebImage(cleanQuery);
             

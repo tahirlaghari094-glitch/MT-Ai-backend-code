@@ -289,15 +289,16 @@ app.post('/api/chat', async (req, res) => {
             }
 
         } else {
-            // --- GENERAL CHAT / FACTS PIPELINE ---
+            // --- GENERAL CHAT / FACTS PIPELINE WITH GOOGLE SEARCH GROUNDING ---
             const conversationHistory = database.conversations[email].slice(-6);
             
             const systemPrompt = `You are MT AI, an advanced AI virtual assistant developed by MT.
 ALWAYS reply in natural, highly accurate, and conversational Roman Urdu.
 
 Your core mission is ABSOLUTE ACCURACY:
-- Deliver direct, clear, and perfectly factual responses.
-- Keep the tone helpful and friendly.`;
+- Deliver direct, clear, and perfectly factual responses using Google Search results.
+- Always prefer search findings over your old training data for current events, facts, biographies, and news.
+- Keep the tone helpful, smart, and friendly.`;
 
             try {
                 if (!apiKey) {
@@ -309,29 +310,19 @@ Your core mission is ABSOLUTE ACCURACY:
                     parts: [{ text: msg.content || ' ' }]
                 }));
 
+                // Enabling Google Search Tool for Gemini 2.0 Flash
                 const geminiResponse = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.1, // Highly precise and direct
+                        temperature: 0.2, // Low temperature for higher accuracy
+                        tools: [{ googleSearch: {} }], // ACTIVATED GOOGLE SEARCH GROUNDING HERE ⚡
                         safetySettings: [
-                            {
-                                category: 'HARM_CATEGORY_HATE_SPEECH',
-                                threshold: 'BLOCK_NONE'
-                            },
-                            {
-                                category: 'HARM_CATEGORY_HARASSMENT',
-                                threshold: 'BLOCK_NONE'
-                            },
-                            {
-                                category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                                threshold: 'BLOCK_NONE'
-                            },
-                            {
-                                category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-                                threshold: 'BLOCK_NONE'
-                            }
+                            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
                         ]
                     }
                 });
@@ -357,7 +348,7 @@ Your core mission is ABSOLUTE ACCURACY:
                                 }))
                             ],
                             model: "openai",
-                            temperature: 0.1
+                            temperature: 0.2
                         })
                     });
 

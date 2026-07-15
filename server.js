@@ -169,17 +169,16 @@ const findRealWebImage = async (query) => {
         else if (lowerQuery.includes("babar") || lowerQuery.includes("bbr")) cleanQuery = "Babar Azam";
         else if (lowerQuery.includes("sharukh") || lowerQuery.includes("srk") || lowerQuery.includes("shahrukh")) cleanQuery = "Shah Rukh Khan";
 
-        // 2. Wikipedia Search API call (This resolves spelling mistakes globally, e.g. "govnda" -> "Govinda")
+        // 2. Wikipedia Search API call
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*`;
         const searchResponse = await fetch(searchUrl);
         
         if (searchResponse.ok) {
             const searchData = await searchResponse.json();
             if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
-                // Sahi rectified target page title mil gaya! (e.g. "Govinda (actor)")
                 const matchedTitle = searchData.query.search[0].title;
 
-                // 3. Query details and pageimage/thumbnail URL for the exact matched page title
+                // 3. Query details and pageimage/thumbnail URL
                 const imageQueryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(matchedTitle)}&prop=pageimages&pithumbsize=600&format=json&origin=*`;
                 const imageResponse = await fetch(imageQueryUrl);
 
@@ -243,7 +242,6 @@ app.post('/api/chat', async (req, res) => {
 
     let aiResponse = "";
 
-    // Comprehensive Roman Urdu / English image keyword detector
     const promptLower = prompt.toLowerCase();
     const imageKeywords = [
         "image", "photo", "picture", "draw", "tasveer", "show", "create", 
@@ -280,10 +278,9 @@ app.post('/api/chat', async (req, res) => {
                 const displayName = imageResult.realTitle;
                 const realImageUrl = imageResult.url;
                 
-                // Response with actual verified image
-                aiResponse = `Ji bilkul! Ye rahi **${displayName}** ki real photo:\n\n![${displayName}](${realImageUrl})\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:350px; height:auto; border-radius:12px; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
+                // FIXED: Removed Markdown Image syntax. Now only showing the beautifully controlled smaller HTML image.
+                aiResponse = `Ji bilkul! Ye rahi **${displayName}** ki real photo:\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:280px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
             } else {
-                // Politely handle if no matching public page exists on wikipedia
                 aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public profile photo nahi mil saki. Kya aap kisi aur famous celebrity ya mashhoor cheez ki pic dekhna chahte hain?`;
             }
 

@@ -299,23 +299,17 @@ app.post('/api/chat', async (req, res) => {
 
         } else {
             // --- NORMAL CHAT PIPELINE ---
-            const conversationHistory = database.conversations[email].slice(-6); // Limit history to prevent old text bugs
+            const conversationHistory = database.conversations[email].slice(-6);
             
-            // --- UNIVERSAL, ERROR-FREE & OPEN SYSTEM INSTRUCTIONS ---
+            // --- AZAD, SMART AUR ZERO-ERRORS SYSTEM INSTRUCTION ---
             const systemPrompt = `You are MT AI, an advanced virtual assistant developed by MT. ALWAYS reply in natural Roman Urdu.
 
-CRITICAL RULES FOR FACTUAL ACCURACY (Anti-Hallucination & Infinite Loop protection):
-1. Give accurate, honest, and scientifically/historically verified information on ANY topic, celebrity, science query, world event, or historical figure (including Donald Trump, Shah Abdul Latif Bhittai, Salman Khan, Cristiano Ronaldo, etc.). Do NOT say you do not have details for famous personalities unless it is completely obscure.
-2. Absolutely NEVER make up fake marital partners, fake academic degrees (like Harvard MBA for Shehbaz Sharif), or fake sibling relationships.
-3. If asked about a user-provided text, analyze it deeply and point out any factual errors politely but directly. Never validate incorrect texts.
-4. Do NOT loop or repeat sentences/words. Keep responses conversational, smart, and well-structured.
-
-STRICT HARDCODED TRUTHS FOR OFTEN-MISUNDERSTOOD CHARACTERS:
-- Salman Khan: Unmarried. Born 27 December 1965 in Indore. Brother of Arbaaz and Sohail. Did NOT marry Sakshi Tanwar or anyone else. Did NOT act in "War" (Hrithik Roshan's film). Bigg Boss host since Season 4.
-- Shehbaz Sharif: Current PM of Pakistan (also served from April 2022 to August 2023). Graduated (B.A.) from GCU Lahore (No Harvard MBA). Mother: Shamim Akhtar. Wives: Nusrat Shehbaz, Tehmina Durrani. Brother: Nawaz Sharif (12th PM). No sister named Maria Sharif in politics.
-- Maryam Nawaz: Born 28 October 1973 in Lahore. Studied at Punjab University (PU) Lahore (NOT University of Karachi). Currently Chief Minister of Punjab.
-- Quaid-e-Azam Muhammad Ali Jinnah: Pakistan's first Governor-General (NOT President). Born 25 December 1876, died 11 September 1948. Presented Lahore Resolution in March 1940.
-- Imran Khan: Born 5 October 1952. Currently alive in Adiala Jail. Won 1992 World Cup. Founded PTI in 1996. PM from 2018 to 2022.`;
+CRITICAL RULES FOR ABSOLUTE TRUTH:
+1. You have a vast, complete, and verified knowledge base. You can and MUST answer questions about any international or national celebrity, historical figure, politician, place, science, or general knowledge topic with 100% accurate facts.
+2. If the user presents a biographical text or details about a person/topic, analyze it with extreme care:
+   - If there are factual mistakes (such as wrong spouses, fake marriages, incorrect parents, wrong siblings, or wrong historical achievements), you must gently and directly correct those errors.
+   - Do NOT agree with incorrect texts. Verify all facts internally before confirming.
+3. NEVER repeat yourself or loop sentences. Keep the tone very natural, professional, intelligent, and helpful.`;
 
             try {
                 if (!apiKey) {
@@ -332,7 +326,7 @@ STRICT HARDCODED TRUTHS FOR OFTEN-MISUNDERSTOOD CHARACTERS:
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.1 // Precision mode
+                        temperature: 0.1 // Precision mode to guarantee strict facts
                     }
                 });
 
@@ -345,7 +339,6 @@ STRICT HARDCODED TRUTHS FOR OFTEN-MISUNDERSTOOD CHARACTERS:
                 console.warn("⚠️ Gemini failed or inactive. Using safe fallback.", geminiError.message);
                 
                 try {
-                    // Safe structured fallback payload that enforces the exact system instructions
                     const fallbackFetch = await fetch("https://text.pollinations.ai/", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },

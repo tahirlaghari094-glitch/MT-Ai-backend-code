@@ -8,7 +8,7 @@ const { GoogleGenAI } = require('@google/genai');
 
 const app = express();
 
-// Railway variable "GEMINIAPIKEY" ko read karein
+// Railway ya local environment variable "GEMINIAPIKEY" ko read karein
 const apiKey = process.env.GEMINIAPIKEY;
 if (!apiKey) {
     console.error("❌ WARNING: GEMINIAPIKEY is not set in environment variables!");
@@ -216,7 +216,7 @@ const findRealWebImage = async (query) => {
     }
 };
 
-// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE
+// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE (Fact-Checked & Grounded)
 app.post('/api/chat', async (req, res) => {
     const { 
         email = 'guest@example.com', 
@@ -249,10 +249,10 @@ app.post('/api/chat', async (req, res) => {
         database.conversations[email] = [];
     }
 
+    // Naya prompt memory database me save karein
     database.conversations[email].push({ sender: 'user', content: prompt });
 
     let aiResponse = "";
-
     const promptLower = prompt.toLowerCase();
     
     // BROAD IMAGE INTENT TRIGGER (Sirf Core Words)
@@ -289,35 +289,57 @@ app.post('/api/chat', async (req, res) => {
             }
 
         } else {
-            // --- GENERAL CHAT / FACTS PIPELINE WITH GOOGLE SEARCH GROUNDING ---
-            const conversationHistory = database.conversations[email].slice(-6);
+            // --- GENERAL CHAT WITH STRICT SEARCH AND TRUTH GROUNDING ---
             
-            const systemPrompt = `You are MT AI, an advanced AI virtual assistant developed by MT.
-ALWAYS reply in natural, highly accurate, and conversational Roman Urdu.
+            const systemPrompt = `You are MT AI, an elite AI assistant developed by MT.
+Your language is natural, fluent Roman Urdu.
 
-Your core mission is ABSOLUTE ACCURACY:
-- Deliver direct, clear, and perfectly factual responses using Google Search results.
-- Always prefer search findings over your old training data for current events, facts, biographies, and news.
-- Keep the tone helpful, smart, and friendly.`;
+CRITICAL TRUTH AND ACCURACY RULES:
+1. Ground every single factual statement (biographies, dates, history, news) directly in Google Search results.
+2. If the user's previous conversation history or prompt contains false/inaccurate statements (e.g., wrong spouses, incorrect dates, wrong family details), you MUST POLITELY CORRECT them and state the absolute truth according to real-time Google Search grounding.
+3. NEVER repeat or build upon false data provided in the previous history or by the user.
+4. Keep answers clean, bulleted, and easy to read.`;
 
-            try {
-                if (!apiKey) {
-                    throw new Error("Gemini API key is missing. Skipping directly to safe backup.");
-                }
+            // Agar factual ya general information ka query ho toh hum history ke purane aur potential ghalat context ko bypass karwa detay hain
+            const isFactualQuery = promptLower.includes("imran") || 
+                                  promptLower.includes("khan") || 
+                                  promptLower.includes("who is") || 
+                                  promptLower.includes("kon hai") || 
+                                  promptLower.includes("biography") || 
+                                  promptLower.includes("born") || 
+                                  promptLower.includes("date");
 
-                const contents = conversationHistory.map(msg => ({
+            let contents = [];
+
+            if (isFactualQuery) {
+                // Fact-Check Bypass: Is se purani galat memory overwrite ho jayegi aur fresh direct search perform hogi
+                contents = [
+                    {
+                        role: 'user',
+                        parts: [{ text: `Search the web and provide 100% accurate factual details for: ${prompt}` }]
+                    }
+                ];
+            } else {
+                // Baki regular normal conversation ke liye history pass hogi
+                const conversationHistory = database.conversations[email].slice(-6);
+                contents = conversationHistory.map(msg => ({
                     role: msg.sender === 'user' ? 'user' : 'model',
                     parts: [{ text: msg.content || ' ' }]
                 }));
+            }
 
-                // Enabling Google Search Tool for Gemini 2.0 Flash
+            try {
+                if (!apiKey) {
+                    throw new Error("Gemini API key is missing.");
+                }
+
                 const geminiResponse = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.2, // Low temperature for higher accuracy
-                        tools: [{ googleSearch: {} }], // ACTIVATED GOOGLE SEARCH GROUNDING HERE ⚡
+                        temperature: 0.1, // Zero randomness for maximum factual accuracy
+                        tools: [{ googleSearch: {} }], // Live Search Tool enabled
                         safetySettings: [
                             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
                             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -330,10 +352,10 @@ Your core mission is ABSOLUTE ACCURACY:
                 if (geminiResponse && geminiResponse.text) {
                     aiResponse = geminiResponse.text;
                 } else {
-                    throw new Error("Empty Gemini Response");
+                    throw new Error("Empty response from Google Gemini");
                 }
             } catch (geminiError) {
-                console.warn("⚠️ Gemini failed. Using safe fallback.", geminiError.message);
+                console.warn("⚠️ Gemini routing failed. Loading secure fallback.", geminiError.message);
                 
                 try {
                     const fallbackFetch = await fetch("https://text.pollinations.ai/", {
@@ -342,32 +364,30 @@ Your core mission is ABSOLUTE ACCURACY:
                         body: JSON.stringify({
                             messages: [
                                 { role: "system", content: systemPrompt },
-                                ...conversationHistory.map(msg => ({
-                                    role: msg.sender === 'user' ? "user" : "assistant",
-                                    content: msg.content
-                                }))
+                                { role: "user", content: prompt }
                             ],
                             model: "openai",
-                            temperature: 0.2
+                            temperature: 0.1
                         })
                     });
 
                     if (fallbackFetch.ok) {
                         aiResponse = await fallbackFetch.text();
                     } else {
-                        aiResponse = "Maazrat! System is waqt thoda load nahi le raha. Baraye meharbani kuch deir baad koshish karein.";
+                        aiResponse = "Maazrat, system is waqt load nahi le raha. Please thodi dair baad try karein.";
                     }
                 } catch (fallbackErr) {
-                    aiResponse = "System temporarily unavailable. Please try again in a few moments.";
+                    aiResponse = "System temporarily offline. Please try again.";
                 }
             }
         }
 
     } catch (error) {
-        console.error("AI Generation Error details:", error);
-        aiResponse = "Server connection lost. Please check your internet or retry.";
+        console.error("AI Generation Error:", error);
+        aiResponse = "Server connection lost. Please try again.";
     }
 
+    // AI ka response memory database me push karein
     database.conversations[email].push({ sender: 'ai', content: aiResponse });
 
     res.json({

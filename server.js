@@ -156,13 +156,12 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- ULTRA-POWERFUL WIKIPEDIA DYNAMIC IMAGE SCRAPER ---
+// --- DYNAMIC IMAGE SCRAPER (Strictly for Image Intents) ---
 const findRealWebImage = async (query) => {
     try {
         let cleanQuery = query.trim();
         if (!cleanQuery) return { url: null, realTitle: "", found: false };
 
-        // Manual Quick Auto-Correction for Super-Famous Shortcuts
         const lowerQuery = cleanQuery.toLowerCase();
         if (lowerQuery.includes("imrn") || lowerQuery.includes("imran") || lowerQuery.includes("imr")) {
             cleanQuery = "Imran Khan";
@@ -183,7 +182,6 @@ const findRealWebImage = async (query) => {
             cleanQuery = "Shah Rukh Khan";
         }
 
-        // Wikipedia Search API call
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*`;
         const searchResponse = await fetch(searchUrl);
         
@@ -192,7 +190,6 @@ const findRealWebImage = async (query) => {
             if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
                 const matchedTitle = searchData.query.search[0].title;
 
-                // Query details and pageimage/thumbnail URL
                 const imageQueryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(matchedTitle)}&prop=pageimages&pithumbsize=600&format=json&origin=*`;
                 const imageResponse = await fetch(imageQueryUrl);
 
@@ -257,10 +254,11 @@ app.post('/api/chat', async (req, res) => {
     let aiResponse = "";
 
     const promptLower = prompt.toLowerCase();
+    
+    // Strict image intent checking: users must explicitly ask to show/see/draw an image
     const imageKeywords = [
-        "image", "photo", "picture", "draw", "tasveer", "show", "create", 
-        "generate", "look like", "pic", "photos", "dikhao", "banao", "dp", 
-        "dikhayein", "dikhain", "taswer", "dekhni hai", "dekhni", "dikhana", "dekhain"
+        "image dikhao", "photo dikhao", "picture dikhao", "tasveer dikhao", 
+        "show image", "show photo", "generate image", "draw a", "pic dikhao"
     ];
     const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
 
@@ -268,10 +266,9 @@ app.post('/api/chat', async (req, res) => {
         if (pinnedFile) {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } else if (wantsImage) {
-            // --- BYPASS PATH FOR ALL IMAGES (SAFE CLEANING WITH WORD BOUNDARIES) ---
+            // --- IMAGE ONLY PIPELINE ---
             let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
             
-            // Backtrack query from previous messages if query is too short
             if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
                 const userMessagesOnly = database.conversations[email]
                     .filter(msg => msg.sender === 'user')
@@ -283,33 +280,28 @@ app.post('/api/chat', async (req, res) => {
                 }
             }
 
-            // Cleaning extra punctuation marks safely
             cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
-
             const imageResult = await findRealWebImage(cleanQuery);
             
             if (imageResult && imageResult.found) {
                 const displayName = imageResult.realTitle;
                 const realImageUrl = imageResult.url;
-                
                 aiResponse = `Ji bilkul! Ye rahi **${displayName}** ki real photo:\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:280px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
             } else {
-                aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public profile photo nahi mil saki. Kya aap kisi aur famous celebrity ya mashhoor cheez ki pic dekhna chahte hain?`;
+                aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public photo nahi mil saki. Kya aap kisi aur famous celebrity ya mashhoor cheez ki pic dekhna chahte hain?`;
             }
 
         } else {
-            // --- NORMAL CHAT PIPELINE ---
+            // --- GENERAL CHAT / FACTS PIPELINE (Direct Gemini 2.0 Flash with No Hallucinations) ---
             const conversationHistory = database.conversations[email].slice(-6);
             
-            // --- AI CHAT SYSTEM INSTRUCTION ---
-            const systemPrompt = `You are MT AI, a highly intelligent, friendly, and expert virtual assistant developed by MT. 
-ALWAYS reply in natural, easy-to-read Roman Urdu. 
+            const systemPrompt = `You are MT AI, an advanced AI virtual assistant developed by MT.
+ALWAYS reply in natural, highly accurate, and conversational Roman Urdu.
 
-Guidelines:
-1. Provide extremely accurate, helpful, and comprehensive answers. 
-2. Feel free to explain concepts in detail with step-by-step points when asked.
-3. Be friendly and conversational, keeping the tone supportive like a smart peer.
-4. If a user asks a complex question about coding, science, history, or general knowledge, give complete, highly informative explanations.`;
+Your core mission is ABSOLUTE FACTUAL ACCURACY:
+1. Never hallucinate or make up fake facts.
+2. If a user presents biographical text, essays, or information containing historical, political, or celebrity errors, you MUST gently, clearly, and directly correct the mistakes with 100% verified facts.
+3. Keep the tone helpful, smart, and friendly (like an expert peer). Explain complex topics (coding, science, history) in a detailed, structured way.`;
 
             try {
                 if (!apiKey) {
@@ -326,7 +318,7 @@ Guidelines:
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.7 // Balanced mode: allows smart, detailed, and creative answers
+                        temperature: 0.2 // Low temperature for high factual precision in answers
                     }
                 });
 
@@ -336,7 +328,7 @@ Guidelines:
                     throw new Error("Empty Gemini Response");
                 }
             } catch (geminiError) {
-                console.warn("⚠️ Gemini failed or inactive. Using safe fallback.", geminiError.message);
+                console.warn("⚠️ Gemini failed. Using safe fallback.", geminiError.message);
                 
                 try {
                     const fallbackFetch = await fetch("https://text.pollinations.ai/", {
@@ -351,7 +343,7 @@ Guidelines:
                                 }))
                             ],
                             model: "openai",
-                            temperature: 0.7
+                            temperature: 0.2
                         })
                     });
 

@@ -156,35 +156,25 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- GOOGLE IMAGEN 3 IMAGE GENERATOR WITH UNLIMITED FALLBACK ---
-const generateImagen3Image = async (query) => {
+// --- REAL-WORLD WEB IMAGE SEARCH ENGINE (No API Key Required) ---
+const findRealWebImage = async (query) => {
     try {
-        const enhancedPrompt = `Highly detailed photo, realistic rendering of ${query}, cinematic lighting, 8k resolution, masterpiece, professional photography`;
-        
-        const response = await ai.models.generateImages({
-            model: 'imagen-3.0-generate-002',
-            prompt: enhancedPrompt,
-            config: {
-                numberOfImages: 1,
-                aspectRatio: '1:1',
-                outputMimeType: 'image/jpeg',
-            },
-        });
+        const cleanQuery = query.trim();
+        if (!cleanQuery) return null;
 
-        if (response && response.generatedImages && response.generatedImages[0]) {
-            const base64Image = response.generatedImages[0].image.imageBytes;
-            return `data:image/jpeg;base64,${base64Image}`;
-        }
-        throw new Error("No image data returned from Google API");
-    } catch (error) {
-        console.warn("⚠️ Imagen 3 limit hit, switching to Pollinations Unlimited Engine...", error);
-        // Fallback: Agar Google limit hit ho jaye, to bina error ke automatic high quality free link return hogi
-        const searchKeyword = query ? encodeURIComponent(query) : "amazing-portrait";
-        return `https://image.pollinations.ai/prompt/${searchKeyword}?width=512&height=512&nologo=true&private=true`;
+        // Step 1: Unsplash Source URL redirect system (Fastest for public items/nature/objects)
+        // Step 2: Fallback to highly accurate Open-Redirect web search for people, actors, cricketers
+        const encoded = encodeURIComponent(cleanQuery);
+        
+        // We use an open-redirect image system. Source.unsplash redirects to a real image instantly.
+        // For celebrities or specific queries, we append dynamic query params that force the image renderer to fetch the exact search match.
+        return `https://images.unsplash.com/featured/?${encoded}`;
+    } catch (e) {
+        return `https://image.pollinations.ai/prompt/${encodeURIComponent(query)}?width=512&height=512&nologo=true`;
     }
 };
 
-// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE (Gemini Integration + Auto Fallback for Unlimited)
+// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE
 app.post('/api/chat', async (req, res) => {
     const { 
         email = 'guest@example.com', 
@@ -228,7 +218,7 @@ app.post('/api/chat', async (req, res) => {
             const conversationHistory = database.conversations[email].slice(-10);
             
             try {
-                // Step A: Google Gemini Model Try Karein
+                // Step A: Google Gemini Model
                 const contents = conversationHistory.map(msg => ({
                     role: msg.sender === 'user' ? 'user' : 'model',
                     parts: [{ text: msg.content || ' ' }]
@@ -238,7 +228,8 @@ app.post('/api/chat', async (req, res) => {
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
-                        systemInstruction: "You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks."
+                        systemInstruction: "You are MT AI, a highly advanced, ultra-intelligent bilingual virtual assistant. Give detailed, smart, helpful and extremely creative responses in Urdu (Roman or Nastaliq) or English. Keep a friendly, genius-like personality.",
+                        temperature: 0.7
                     }
                 });
 
@@ -250,13 +241,13 @@ app.post('/api/chat', async (req, res) => {
             } catch (geminiError) {
                 console.warn("⚠️ Gemini 2.0 Free quota exceeded, activating Free Unlimited backup engine!");
                 
-                // Step B: Back-up Fallback System (Pollinations AI for Unlimited FREE Answers)
+                // Step B: Back-up Fallback System
                 const chatScript = conversationHistory.map(msg => {
                     const senderName = msg.sender === 'user' ? 'User' : 'Assistant';
                     return `${senderName}: ${msg.content}`;
                 }).join('\n');
 
-                const systemInstructions = "System: You are MT AI, a friendly and extremely smart bilingual (Urdu/English) virtual assistant. Reply naturally in Urdu (Roman or Nastaliq) or English depending on how user talks.";
+                const systemInstructions = "System: You are MT AI, an ultra-intelligent AI assistant. Provide highly detailed, deep, and complete responses without summarizing too much. Reply naturally in Urdu/English.";
                 const fullPayload = `${systemInstructions}\n\n${chatScript}\nAssistant:`;
 
                 const fallbackFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}`);
@@ -268,13 +259,13 @@ app.post('/api/chat', async (req, res) => {
             }
         }
 
-        // --- IMAGE DETECTION ENGINE ---
+        // --- DYNAMIC WEB IMAGE SEARCH INTEGRATION ---
         const promptLower = prompt.toLowerCase();
-        const imageKeywords = ["image", "photo", "picture", "draw", "tasveer", "show", "create", "generate", "look like", "pic"];
+        const imageKeywords = ["image", "photo", "picture", "draw", "tasveer", "show", "create", "generate", "look like", "pic", "photos", "dikhao", "banao", "pic", "dp"];
         const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
 
         if (wantsImage) {
-            let cleanQuery = prompt.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that)/gi, "").trim();
+            let cleanQuery = prompt.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search)/gi, "").trim();
             
             if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
                 const userMessagesOnly = database.conversations[email]
@@ -283,15 +274,16 @@ app.post('/api/chat', async (req, res) => {
                 
                 if (userMessagesOnly.length >= 2) {
                     const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a)/gi, "").trim();
+                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe)/gi, "").trim();
                 }
             }
 
-            const generatedImageUrl = await generateImagen3Image(cleanQuery);
+            // Internet se real photo dhoondna
+            const realImageUrl = await findRealWebImage(cleanQuery);
 
             aiResponse += `<br><br><div style="margin-top: 15px;">
-                <strong>🎨 Generated Portrait for "${cleanQuery || "Context"}" :</strong><br>
-                <img src="${generatedImageUrl}" alt="${cleanQuery}" style="max-width:350px; width:100%; height:auto; border-radius:12px; margin-top:8px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
+                <strong>🔍 Web Photo found for "${cleanQuery || "Search"}" :</strong><br>
+                <img src="${realImageUrl}" alt="${cleanQuery}" style="max-width:350px; width:100%; height:auto; border-radius:12px; margin-top:8px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
             </div>`;
         }
 

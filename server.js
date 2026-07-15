@@ -262,7 +262,7 @@ app.post('/api/chat', async (req, res) => {
                 const systemInstructions = "System: You are MT AI, an ultra-intelligent AI assistant. Provide highly detailed, deep, and complete responses without summarizing too much. Reply naturally in Urdu/English.";
                 const fullPayload = `${systemInstructions}\n\n${chatScript}\nAssistant:`;
 
-                const fallbackFetch = await fetch://text.pollinations.ai/${encodeURIComponent(fullPayload)});
+                const fallbackFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}`);
                 if (fallbackFetch.ok) {
                     aiResponse = await fallbackFetch.text();
                 } else {
@@ -286,7 +286,7 @@ app.post('/api/chat', async (req, res) => {
                 
                 if (userMessagesOnly.length >= 2) {
                     const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe)/gi, "").trim();
+                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki)/gi, "").trim();
                 }
             }
 

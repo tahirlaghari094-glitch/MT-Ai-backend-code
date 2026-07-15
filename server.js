@@ -156,25 +156,42 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- REAL-WORLD WEB IMAGE SEARCH ENGINE (No API Key Required) ---
+// --- REAL GOOGLE/WEB IMAGE FINDER (Directly Grabs JPG/PNG without links) ---
 const findRealWebImage = async (query) => {
     try {
         const cleanQuery = query.trim();
         if (!cleanQuery) return null;
 
-        // Step 1: Unsplash Source URL redirect system (Fastest for public items/nature/objects)
-        // Step 2: Fallback to highly accurate Open-Redirect web search for people, actors, cricketers
-        const encoded = encodeURIComponent(cleanQuery);
-        
-        // We use an open-redirect image system. Source.unsplash redirects to a real image instantly.
-        // For celebrities or specific queries, we append dynamic query params that force the image renderer to fetch the exact search match.
-        return `https://images.unsplash.com/featured/?${encoded}`;
+        // DuckDuckGo API to dynamically fetch real-world image hotlinks (works for celebrities like Imran Khan, Salman Khan, cars, etc.)
+        const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQuery)}&format=json&pretty=1`;
+        const response = await fetch(searchUrl);
+        const data = await response.json();
+
+        // Agar DuckDuckGo par official image mil jaye (usually highly accurate celebrities)
+        if (data.Image && data.Image.startsWith('http')) {
+            return data.Image;
+        }
+
+        // Backup 1: Wikipedia dynamic rendering (For most famous people and places)
+        const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery.replace(/\s+/g, '_'))}`;
+        const wikiResponse = await fetch(wikiUrl);
+        if (wikiResponse.ok) {
+            const wikiData = await wikiResponse.json();
+            if (wikiData.thumbnail && wikiData.thumbnail.source) {
+                return wikiData.thumbnail.source;
+            }
+        }
+
+        // Backup 2: Quick stock photo direct hotlink (For generic queries like "laptop", "cat", etc.)
+        return `https://images.unsplash.com/featured/?${encodeURIComponent(cleanQuery)}`;
     } catch (e) {
+        console.error("Error fetching real image:", e);
+        // Safest free AI drawing backup in case search is blocked
         return `https://image.pollinations.ai/prompt/${encodeURIComponent(query)}?width=512&height=512&nologo=true`;
     }
 };
 
-// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE
+// 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE (Advanced Smart Integration)
 app.post('/api/chat', async (req, res) => {
     const { 
         email = 'guest@example.com', 
@@ -261,11 +278,11 @@ app.post('/api/chat', async (req, res) => {
 
         // --- DYNAMIC WEB IMAGE SEARCH INTEGRATION ---
         const promptLower = prompt.toLowerCase();
-        const imageKeywords = ["image", "photo", "picture", "draw", "tasveer", "show", "create", "generate", "look like", "pic", "photos", "dikhao", "banao", "pic", "dp"];
+        const imageKeywords = ["image", "photo", "picture", "draw", "tasveer", "show", "create", "generate", "look like", "pic", "photos", "dikhao", "banao", "pic", "dp", "pic"];
         const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
 
         if (wantsImage) {
-            let cleanQuery = prompt.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search)/gi, "").trim();
+            let cleanQuery = prompt.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki)/gi, "").trim();
             
             if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
                 const userMessagesOnly = database.conversations[email]
@@ -274,16 +291,17 @@ app.post('/api/chat', async (req, res) => {
                 
                 if (userMessagesOnly.length >= 2) {
                     const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe)/gi, "").trim();
+                    cleanQuery = lastTopic.replace(/(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki)/gi, "").trim();
                 }
             }
 
-            // Internet se real photo dhoondna
+            // Real celebrity/object image URL directly from search APIs
             const realImageUrl = await findRealWebImage(cleanQuery);
 
-            aiResponse += `<br><br><div style="margin-top: 15px;">
-                <strong>🔍 Web Photo found for "${cleanQuery || "Search"}" :</strong><br>
-                <img src="${realImageUrl}" alt="${cleanQuery}" style="max-width:350px; width:100%; height:auto; border-radius:12px; margin-top:8px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
+            // Directly inject Image tag so the UI renders it automatically
+            aiResponse += `<br><br><div style="margin-top: 15px; text-align: center;">
+                <strong style="display: block; margin-bottom: 8px;">🔍 Real-world photo of "${cleanQuery}":</strong>
+                <img src="${realImageUrl}" alt="${cleanQuery}" style="max-width: 100%; width: 350px; height: auto; border-radius: 12px; border: 2px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />
             </div>`;
         }
 

@@ -1,49 +1,225 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios'); // Railway safe, no ESM conflicts
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+// Google Gen AI SDK import
 const { GoogleGenAI } = require('@google/genai');
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
-
-// Port binding for Railway
-const PORT = process.env.PORT || 3000;
-
-// Mock Databases
-const database = {
-    users: [],
-    conversations: {}
-};
-
-// API Key configuration (Must be set in Railway variables as GEMINI_API_KEY)
-const apiKey = process.env.GEMINI_API_KEY || "YOUR_FALLBACK_API_KEY"; 
-
-// Initialize Google GenAI
-const ai = new GoogleGenAI({ apiKey: apiKey });
-
-// Real Web Image Finder (Axios Version)
-async function findRealWebImage(query) {
-    try {
-        if (!query || query.length < 2) return { found: false };
-        
-        // Placeholder image layout - replace with your actual custom search if needed
-        const url = `https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=600&auto=format&fit=crop`; 
-        
-        return {
-            found: true,
-            realTitle: query,
-            url: url
-        };
-    } catch (e) {
-        return { found: false };
-    }
+// Railway variable "GEMINIAPIKEY" ko read karein
+const apiKey = process.env.GEMINIAPIKEY;
+if (!apiKey) {
+    console.error("❌ WARNING: GEMINIAPIKEY is not set in environment variables!");
 }
 
-// ====================================================================
+const ai = new GoogleGenAI({ apiKey: apiKey });
+
+// Payload size limit for smooth transfers
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+const PORT = process.env.PORT || 5000;
+
+// MIDDLEWARES
+app.use(cors());
+
+// Static Files hosting
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Ensure Uploads Directory Exists
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadDir));
+
+// MULTER STORAGE SYSTEM
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage: storage });
+
+// IN-MEMORY MOCK DATABASE
+const database = {
+    users: [], 
+    conversations: {} 
+};
+
+// 1. AUTHENTICATION: SIGN UP SYSTEM
+app.post('/api/auth/signup', (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ success: false, message: "Email and password are required." });
+    }
+
+    const userExists = database.users.find(u => u.email === email);
+    if (userExists) {
+        return res.status(400).json({ success: false, message: "User profile already registered." });
+    }
+
+    const newUser = { email, password, isPremium: false, usedLimit: 0 };
+    database.users.push(newUser);
+    res.json({ success: true, message: "Identity created successfully." });
+});
+
+// 2. AUTHENTICATION: LOGIN SYSTEM
+app.post('/api/auth/login', (req, res) => {
+    const { email, password } = req.body;
+    const user = database.users.find(u => u.email === email && u.password === password);
+    
+    if (user) {
+        res.json({ success: true, message: "Workspace verified access granted." });
+    } else {
+        res.status(401).json({ success: false, message: "Invalid system credentials." });
+    }
+});
+
+// 3. ACCOUNT: LIMIT INQUIRY PIPELINE
+app.get('/api/user/limits', (req, res) => {
+    const { email } = req.query;
+    const user = database.users.find(u => u.email === email);
+
+    if (user) {
+        res.json({ success: true, isPremium: user.isPremium, used: user.usedLimit });
+    } else {
+        res.status(404).json({ success: false, message: "Profile session missing." });
+    }
+});
+
+// 4. ACCOUNT: PREMIUM UPGRADE INTERACTION
+app.post('/api/user/upgrade', (req, res) => {
+    const { email } = req.body;
+    const user = database.users.find(u => u.email === email);
+
+    if (user) {
+        user.isPremium = true;
+        res.json({ success: true, message: "Subscription tier raised to Premium." });
+    } else {
+        res.status(404).json({ success: false, message: "User not found." });
+    }
+});
+
+// 5. ASSET PIPELINE: FILE/CAMERA UPLOAD SYSTEM
+app.post('/api/upload', upload.single('file'), (req, res) => {
+    const host = req.get('host');
+    const protocol = host.includes('localhost') ? req.protocol : 'https';
+
+    if (req.body.image) {
+        try {
+            const base64Data = req.body.image.replace(/^data:image\/\w+;base64,/, "");
+            const filename = `camera-${Date.now()}-${Math.round(Math.random() * 1E9)}.png`;
+            const filepath = path.join(uploadDir, filename);
+
+            fs.writeFileSync(filepath, base64Data, 'base64');
+
+            return res.json({
+                success: true,
+                file: {
+                    filename: filename,
+                    originalName: req.body.originalName || "Camera_Capture.png",
+                    url: `${protocol}://${host}/uploads/${filename}`
+                }
+            });
+        } catch (error) {
+            return res.status(500).json({ success: false, message: "Camera image process karne me masla hua." });
+        }
+    }
+
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: "Failed parsing stream asset." });
+    }
+
+    res.json({
+        success: true,
+        file: {
+            filename: req.file.filename,
+            originalName: req.file.originalname,
+            url: `${protocol}://${host}/uploads/${req.file.filename}`
+        }
+    });
+});
+
+// 6. PIPELINE CHAT: CONTEXT MEMORY CLEARANCE
+app.post('/api/chat/clear', (req, res) => {
+    const { email } = req.body;
+    if (email) {
+        database.conversations[email] = [];
+    }
+    res.json({ success: true, message: "Context successfully refreshed." });
+});
+
+// --- ULTRA-POWERFUL WIKIPEDIA DYNAMIC IMAGE SCRAPER ---
+const findRealWebImage = async (query) => {
+    try {
+        let cleanQuery = query.trim();
+        if (!cleanQuery) return { url: null, realTitle: "", found: false };
+
+        // Manual Quick Auto-Correction for Super-Famous Shortcuts
+        const lowerQuery = cleanQuery.toLowerCase();
+        if (lowerQuery.includes("imrn") || lowerQuery.includes("imran") || lowerQuery.includes("imr")) {
+            cleanQuery = "Imran Khan";
+        } else if (
+            lowerQuery.includes("qaid") || 
+            lowerQuery.includes("quaid") || 
+            lowerQuery.includes("jinnah") || 
+            lowerQuery.includes("qaide azam") || 
+            lowerQuery.includes("quaid e azam") || 
+            lowerQuery.includes("quaid-e-azam")
+        ) {
+            cleanQuery = "Muhammad Ali Jinnah";
+        } else if (lowerQuery.includes("slman") || lowerQuery.includes("salman") || lowerQuery.includes("slm") || lowerQuery.includes("khn")) {
+            cleanQuery = "Salman Khan";
+        } else if (lowerQuery.includes("babar") || lowerQuery.includes("bbr")) {
+            cleanQuery = "Babar Azam";
+        } else if (lowerQuery.includes("sharukh") || lowerQuery.includes("srk") || lowerQuery.includes("shahrukh")) {
+            cleanQuery = "Shah Rukh Khan";
+        }
+
+        // Wikipedia Search API call
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*`;
+        const searchResponse = await fetch(searchUrl);
+        
+        if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
+                const matchedTitle = searchData.query.search[0].title;
+
+                // Query details and pageimage/thumbnail URL
+                const imageQueryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(matchedTitle)}&prop=pageimages&pithumbsize=600&format=json&origin=*`;
+                const imageResponse = await fetch(imageQueryUrl);
+
+                if (imageResponse.ok) {
+                    const imageData = await imageResponse.json();
+                    const pages = imageData.query.pages;
+                    const pageId = Object.keys(pages)[0];
+
+                    if (pageId && pages[pageId] && pages[pageId].thumbnail && pages[pageId].thumbnail.source) {
+                        return {
+                            url: pages[pageId].thumbnail.source,
+                            realTitle: matchedTitle,
+                            found: true
+                        };
+                    }
+                }
+            }
+        }
+
+        return { url: null, realTitle: query, found: false };
+    } catch (e) {
+        console.error("Error fetching real image:", e);
+        return { url: null, realTitle: query, found: false };
+    }
+};
+
 // 7. PIPELINE CHAT: CORE AGENT QUERY ENGINE
-// ====================================================================
 app.post('/api/chat', async (req, res) => {
     const { 
         email = 'guest@example.com', 
@@ -62,7 +238,6 @@ app.post('/api/chat', async (req, res) => {
         database.users.push(user);
     }
 
-    // Daily Limit Check
     if (!user.isPremium && (mode === "MT Flash" || mode === "MT Pro")) {
         if (user.usedLimit >= 10) {
             return res.json({ 
@@ -77,59 +252,26 @@ app.post('/api/chat', async (req, res) => {
         database.conversations[email] = [];
     }
 
-    // Save user's fresh prompt to memory
     database.conversations[email].push({ sender: 'user', content: prompt });
 
     let aiResponse = "";
-    const promptLower = prompt.toLowerCase();
-    
-    // Core Image Keywords
-    const imageKeywords = ["image", "photo", "pic", "picture", "tasveer", "taswer"];
-    const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
 
-    // Generation Keywords
-    const generationKeywords = [
-        "generate", "banao", "draw", "create", "make", 
-        "design", "banaen", "banaon", "creative", "painting"
+    const promptLower = prompt.toLowerCase();
+    const imageKeywords = [
+        "image", "photo", "picture", "draw", "tasveer", "show", "create", 
+        "generate", "look like", "pic", "photos", "dikhao", "banao", "dp", 
+        "dikhayein", "dikhain", "taswer", "dekhni hai", "dekhni", "dikhana", "dekhain"
     ];
-    const wantsAiGeneration = generationKeywords.some(keyword => promptLower.includes(keyword)) && wantsImage;
+    const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
 
     try {
         if (pinnedFile) {
-            // --- FILE INPUT PIPELINE ---
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
-        
-        } else if (wantsAiGeneration) {
-            // --- PIPELINE 1: AI IMAGE GENERATION ---
-            let cleanGenPrompt = prompt.replace(/\b(generate|banao|draw|create|make|design|banaen|banaon|show me|give me|of|a|an|please|image|photo|pic|picture|tasveer|taswer|ki|ko|mujhe)\b/gi, "").trim();
-            
-            if (cleanGenPrompt.length < 3 && database.conversations[email].length > 1) {
-                const userMessagesOnly = database.conversations[email]
-                    .filter(msg => msg.sender === 'user')
-                    .map(msg => msg.content);
-                if (userMessagesOnly.length >= 2) {
-                    cleanGenPrompt = userMessagesOnly[userMessagesOnly.length - 2].replace(/\b(generate|banao|draw|create|make|design|banaen|banaon|image|photo|pic|picture|tasveer|taswer)\b/gi, "").trim();
-                }
-            }
-
-            try {
-                const encodedPrompt = encodeURIComponent(cleanGenPrompt);
-                const generatedImageUrl = `https://image.pollinations.ai/p/${encodedPrompt}?width=512&height=512&nologo=true&seed=${Math.floor(Math.random() * 100000)}`;
-
-                const isRomanUrdu = promptLower.includes("banao") || promptLower.includes("mujhe") || promptLower.includes("tasveer");
-                if (isRomanUrdu) {
-                    aiResponse = `Maine aapke liye **"${cleanGenPrompt}"** ki AI image generate kar di hai:\n\n<img src="${generatedImageUrl}" alt="${cleanGenPrompt}" style="max-width:100%; width:320px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
-                } else {
-                    aiResponse = `I have generated the AI image for **"${cleanGenPrompt}"**:\n\n<img src="${generatedImageUrl}" alt="${cleanGenPrompt}" style="max-width:100%; width:320px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
-                }
-            } catch (genError) {
-                aiResponse = `Failed to generate image. Please try again.`;
-            }
-
         } else if (wantsImage) {
-            // --- PIPELINE 2: REAL IMAGE SEARCH ---
-            let cleanQuery = prompt.replace(/\b(show me|give me|give|do|tasveer|image|photo|pic|of|a|an|please|iski|isiki|it|this|that|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|show|dikhao|dikhana)\b/gi, "").trim();
+            // --- BYPASS PATH FOR ALL IMAGES (SAFE CLEANING WITH WORD BOUNDARIES) ---
+            let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
             
+            // Backtrack query from previous messages if query is too short
             if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
                 const userMessagesOnly = database.conversations[email]
                     .filter(msg => msg.sender === 'user')
@@ -137,143 +279,98 @@ app.post('/api/chat', async (req, res) => {
                 
                 if (userMessagesOnly.length >= 2) {
                     const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/\b(show me|give me|give|do|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|banao|mujhe|ki|dikhayein|dikhain|taswer|show|dikhao|dikhana)\b/gi, "").trim();
+                    cleanQuery = lastTopic.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki|dikhayein|dikhain|taswer)\b/gi, "").trim();
                 }
             }
 
+            // Cleaning extra punctuation marks safely
             cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
+
             const imageResult = await findRealWebImage(cleanQuery);
             
             if (imageResult && imageResult.found) {
                 const displayName = imageResult.realTitle;
                 const realImageUrl = imageResult.url;
                 
-                const isRomanUrdu = promptLower.includes("banao") || promptLower.includes("dikhao") || promptLower.includes("tasveer") || promptLower.includes("mujh");
-                if (isRomanUrdu) {
-                    aiResponse = `Ji bilkul! Ye rahi **${displayName}** ki real photo:\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:280px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
-                } else {
-                    aiResponse = `Sure! Here is the real photo of **${displayName}**:\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:280px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
-                }
+                aiResponse = `Ji bilkul! Ye rahi **${displayName}** ki real photo:\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:280px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
             } else {
-                const isRomanUrdu = promptLower.includes("banao") || promptLower.includes("dikhao") || promptLower.includes("tasveer") || promptLower.includes("mujh");
-                if (isRomanUrdu) {
-                    aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public photo nahi mil saki. Kya aap kisi aur famous celebrity ya mashhoor cheez ki pic dekhna chahte hain?`;
-                } else {
-                    aiResponse = `I'm sorry, but I couldn't find a public photo of **${cleanQuery}**. Would you like to view images of another famous person, landmark, or object?`;
-                }
+                aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public profile photo nahi mil saki. Kya aap kisi aur famous celebrity ya mashhoor cheez ki pic dekhna chahte hain?`;
             }
 
         } else {
-            // --- PIPELINE 3: GENERAL TEXT CHAT ---
-            const systemPrompt = `You are MT AI, an elite AI assistant developed by MT.
+            // --- NORMAL CHAT PIPELINE ---
+            const conversationHistory = database.conversations[email].slice(-6);
+            
+            // --- AZAD, SMART AUR ZERO-ERRORS SYSTEM INSTRUCTION ---
+            const systemPrompt = `You are MT AI, an advanced virtual assistant developed by MT. ALWAYS reply in natural Roman Urdu.
 
-CRITICAL RULES:
-1. DEFAULT LANGUAGE IS ENGLISH: You must answer every single query in clear, fluent, and highly professional English.
-2. ADAPTIVE LANGUAGE SWITCHING: If (and only if) the user types their query in Roman Urdu, Urdu, Hindi, or explicitly asks "mujhe is zuban me batao" / "reply in Urdu", you must switch and reply in that specific language (e.g., Roman Urdu). Otherwise, default strictly to English.
-3. GROUNDING: Ground every single factual statement (dates, biographies, history, real-world events) directly in Google Search results.
-4. MEMORY RECALL: If the user refers to a previous context/image (e.g. "who is he?", "explain this", "iske bare me batao") without specifying the name, analyze the chat history to identify the entity they are referring to and continue the conversation seamlessly.
-5. FORMATTING: Use clean, professional headings, and bullet points to structure your response perfectly. No cluttered walls of text.`;
-
-            let modifiedPrompt = prompt;
-            const contextTriggers = ["iske bare me", "is ke bare me", "who is he", "who is she", "who is this", "kon hai ye", "tell me about him", "tell me about her", "tell me about it", "explain", "batao", "koun hai", "who is", "tell me about"];
-            const isIndirectQuery = contextTriggers.some(trigger => promptLower.includes(trigger)) && prompt.split(" ").length <= 4;
-
-            if (isIndirectQuery && database.conversations[email].length > 1) {
-                const previousUserMessages = database.conversations[email]
-                    .filter(msg => msg.sender === 'user')
-                    .map(msg => msg.content);
-
-                if (previousUserMessages.length >= 2) {
-                    const lastTopic = previousUserMessages[previousUserMessages.length - 2];
-                    const cleanTopic = lastTopic.replace(/\b(show me|give me|give|do|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|banao|mujhe|ki|dikhayein|dikhain|taswer|show|dikhao|dikhana)\b/gi, "").trim();
-                    modifiedPrompt = `${prompt} (Context: The user is asking about the entity "${cleanTopic}")`;
-                }
-            }
-
-            const promptLowerForCheck = modifiedPrompt.toLowerCase();
-            const isFactualQuery = promptLowerForCheck.includes("imran") || 
-                                  promptLowerForCheck.includes("khan") || 
-                                  promptLowerForCheck.includes("sharif") ||
-                                  promptLowerForCheck.includes("nawaz") ||
-                                  promptLowerForCheck.includes("who is") || 
-                                  promptLowerForCheck.includes("kon hai") || 
-                                  promptLowerForCheck.includes("biography") || 
-                                  promptLowerForCheck.includes("born") || 
-                                  promptLowerForCheck.includes("date");
-
-            let contents = [];
-
-            if (isFactualQuery) {
-                contents = [
-                    {
-                        role: 'user',
-                        parts: [{ text: `Search the web and provide 100% accurate factual details. Follow language instruction: ${modifiedPrompt}` }]
-                    }
-                ];
-            } else {
-                const conversationHistory = database.conversations[email].slice(-6);
-                contents = conversationHistory.map(msg => ({
-                    role: msg.sender === 'user' ? 'user' : 'model',
-                    parts: [{ text: msg.content || ' ' }]
-                }));
-            }
+CRITICAL RULES FOR ABSOLUTE TRUTH:
+1. You have a vast, complete, and verified knowledge base. You can and MUST answer questions about any international or national celebrity, historical figure, politician, place, science, or general knowledge topic with 100% accurate facts.
+2. If the user presents a biographical text or details about a person/topic, analyze it with extreme care:
+   - If there are factual mistakes (such as wrong spouses, fake marriages, incorrect parents, wrong siblings, or wrong historical achievements), you must gently and directly correct those errors.
+   - Do NOT agree with incorrect texts. Verify all facts internally before confirming.
+3. NEVER repeat yourself or loop sentences. Keep the tone very natural, professional, intelligent, and helpful.`;
 
             try {
                 if (!apiKey) {
-                    throw new Error("Gemini API key is missing.");
+                    throw new Error("Gemini API key is missing. Skipping directly to safe backup.");
                 }
+
+                const contents = conversationHistory.map(msg => ({
+                    role: msg.sender === 'user' ? 'user' : 'model',
+                    parts: [{ text: msg.content || ' ' }]
+                }));
 
                 const geminiResponse = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.1,
-                        tools: [{ googleSearch: {} }],
-                        safetySettings: [
-                            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-                            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-                            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-                            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
-                        ]
+                        temperature: 0.1 // Precision mode to guarantee strict facts
                     }
                 });
 
                 if (geminiResponse && geminiResponse.text) {
                     aiResponse = geminiResponse.text;
                 } else {
-                    throw new Error("Empty response from Google Gemini");
+                    throw new Error("Empty Gemini Response");
                 }
             } catch (geminiError) {
-                console.warn("⚠️ Gemini routing failed. Loading secure fallback.", geminiError.message);
+                console.warn("⚠️ Gemini failed or inactive. Using safe fallback.", geminiError.message);
                 
                 try {
-                    const fallbackResponse = await axios.post("https://text.pollinations.ai/", {
-                        messages: [
-                            { role: "system", content: systemPrompt },
-                            { role: "user", content: modifiedPrompt }
-                        ],
-                        model: "openai",
-                        temperature: 0.1
+                    const fallbackFetch = await fetch("https://text.pollinations.ai/", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            messages: [
+                                { role: "system", content: systemPrompt },
+                                ...conversationHistory.map(msg => ({
+                                    role: msg.sender === 'user' ? "user" : "assistant",
+                                    content: msg.content
+                                }))
+                            ],
+                            model: "openai",
+                            temperature: 0.1
+                        })
                     });
 
-                    if (fallbackResponse.status === 200) {
-                        aiResponse = fallbackResponse.data;
+                    if (fallbackFetch.ok) {
+                        aiResponse = await fallbackFetch.text();
                     } else {
-                        aiResponse = "System is currently busy. Please try again in a moment.";
+                        aiResponse = "Maazrat! System is waqt thoda load nahi le raha. Baraye meharbani kuch deir baad koshish karein.";
                     }
                 } catch (fallbackErr) {
-                    aiResponse = "System temporarily offline. Please try again.";
+                    aiResponse = "System temporarily unavailable. Please try again in a few moments.";
                 }
             }
         }
 
     } catch (error) {
-        console.error("AI Generation Error:", error);
-        aiResponse = "Server connection lost. Please try again.";
+        console.error("AI Generation Error details:", error);
+        aiResponse = "Server connection lost. Please check your internet or retry.";
     }
 
-    // Save AI response to memory
     database.conversations[email].push({ sender: 'ai', content: aiResponse });
 
     res.json({
@@ -282,6 +379,7 @@ CRITICAL RULES:
     });
 });
 
+// START EXPRESS SERVER
 app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
-}); 
+    console.log(`⚡ MT AI Engine Active on Port: ${PORT}`);
+});

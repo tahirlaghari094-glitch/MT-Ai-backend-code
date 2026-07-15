@@ -243,6 +243,7 @@ app.post('/api/chat', async (req, res) => {
     database.conversations[email].push({ sender: 'user', content: prompt });
 
     let aiResponse = "";
+    let generatedImageLink = null; // Explicit image flag for frontend rendering
     const promptLower = prompt.toLowerCase();
 
     // --- DETECT USER INTENT ---
@@ -257,7 +258,6 @@ app.post('/api/chat', async (req, res) => {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
         } 
         else if (wantsGeneration) {
-            // --- SMART AI PROMPT CLEANING WITH GEMINI ---
             let cleanQuery = "A beautiful photo";
             try {
                 const extractionPrompt = `You are a helper that extracts the core visual description from a user's messy chat message to use as an AI image generator prompt.
@@ -279,39 +279,40 @@ app.post('/api/chat', async (req, res) => {
                     cleanQuery = geminiExtraction.text.trim().replace(/^["']|["']$/g, "");
                 }
             } catch (err) {
-                // Fallback basic cleaning if Gemini fails
                 cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|bana kar do|bana do)\b/gi, "").trim();
                 cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
             }
 
             const seed = Math.floor(Math.random() * 1000000);
-            const generatedImageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
+            
+            // --- FIXING API URL FORMAT FOR IMAGE URL ---
+            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
 
+            // Standard HTML syntax wrapping to make sure it displays directly on frontend UI
             aiResponse = `Ji bilkul! Maine aapke kehne par **"${cleanQuery}"** ki tasveer generate kar di hai:
 
-<div style="margin-top: 15px; display: block; max-width: 100%;">
-  <img src="${generatedImageUrl}" alt="${cleanQuery}" style="width: 100%; max-width: 400px; height: auto; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: block;" />
+<div style="margin-top: 15px; display: flex; justify-content: center; width: 100%;">
+  <img src="${generatedImageLink}" alt="${cleanQuery}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #3b82f6; box-shadow: 0 4px 25px rgba(59, 130, 246, 0.25); display: block;" />
 </div>`;
         } 
         else if (wantsSearchOnly) {
-            // --- REAL SEARCH ---
             let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
             cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
 
             const imageResult = await findRealWebImage(cleanQuery);
             
             if (imageResult && imageResult.found) {
+                generatedImageLink = imageResult.url;
                 aiResponse = `Ji bilkul! Ye rahi **${imageResult.realTitle}** ki real photo:
 
-<div style="margin-top: 15px; display: block; max-width: 100%;">
-  <img src="${imageResult.url}" alt="${imageResult.realTitle}" style="width: 100%; max-width: 400px; height: auto; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: block;" />
+<div style="margin-top: 15px; display: flex; justify-content: center; width: 100%;">
+  <img src="${imageResult.url}" alt="${imageResult.realTitle}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #10b981; box-shadow: 0 4px 25px rgba(16, 185, 129, 0.25); display: block;" />
 </div>`;
             } else {
                 aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public photo nahi mil saki. Agar aap chahte hain ke main iski image AI se khud **generate** karun, toh mujhe boleain "iski photo bana kar do"!`;
             }
         } 
         else {
-            // --- NORMAL CHAT PIPELINE ---
             const conversationHistory = database.conversations[email].slice(-6);
             
             const systemPrompt = `You are MT AI, an advanced virtual assistant developed by MT. ALWAYS reply in natural Roman Urdu.
@@ -369,7 +370,13 @@ CRITICAL RULES FOR ABSOLUTE TRUTH:
     }
 
     database.conversations[email].push({ sender: 'ai', content: aiResponse });
-    res.json({ success: true, response: aiResponse });
+    
+    // JSON response customized so the frontend can receive structured 'imageUrl' easily!
+    res.json({ 
+        success: true, 
+        response: aiResponse, 
+        imageUrl: generatedImageLink 
+    });
 });
 
 // START EXPRESS SERVER

@@ -243,15 +243,16 @@ app.post('/api/chat', async (req, res) => {
     database.conversations[email].push({ sender: 'user', content: prompt });
 
     let aiResponse = "";
-    let generatedImageLink = null; // Explicit image flag for frontend rendering
+    let generatedImageLink = null;
     const promptLower = prompt.toLowerCase();
 
-    // --- DETECT USER INTENT ---
+    // --- STRONGER AND REFINED INTENT DETECTOR ---
     const generateKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch"];
-    const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "photo", "pic", "tasveer", "image", "dekhni hai"];
+    const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "photo", "pic", "tasveer", "image", "dekhni hai", "dhundo"];
 
+    // Wants generation takes priority if both are mentioned, otherwise separate clearly
     const wantsGeneration = generateKeywords.some(kw => promptLower.includes(kw));
-    const wantsSearchOnly = searchKeywords.some(kw => promptLower.includes(kw)) && !wantsGeneration;
+    const wantsSearchOnly = !wantsGeneration && searchKeywords.some(kw => promptLower.includes(kw));
 
     try {
         if (pinnedFile) {
@@ -265,9 +266,9 @@ app.post('/api/chat', async (req, res) => {
                 
                 Instructions:
                 1. Remove conversational clutter like "Ji bilkul! Maine aapke kehne par", "phir ya aarha ha", "banao", "generate", "bana do", etc.
-                2. Keep only the main visual subjects, settings, and style (e.g., "Aloo or pyaz hospital k bahar 3d").
-                3. Translate it into high-quality, descriptive English for best generation results (e.g., "A 3D render of a cute cartoon potato and an onion standing outside a modern hospital building").
-                4. Reply with ONLY the final English visual prompt. Do not add any extra text or quotes.`;
+                2. Keep only the main visual subjects, settings, and style.
+                3. Translate it into high-quality, descriptive English for best generation results.
+                4. Reply with ONLY the final English visual prompt. Do not add any extra text, markdown, or quotes.`;
 
                 const geminiExtraction = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
@@ -284,16 +285,10 @@ app.post('/api/chat', async (req, res) => {
             }
 
             const seed = Math.floor(Math.random() * 1000000);
-            
-            // --- FIXING API URL FORMAT FOR IMAGE URL ---
             generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
 
-            // Standard HTML syntax wrapping to make sure it displays directly on frontend UI
-            aiResponse = `Ji bilkul! Maine aapke kehne par **"${cleanQuery}"** ki tasveer generate kar di hai:
-
-<div style="margin-top: 15px; display: flex; justify-content: center; width: 100%;">
-  <img src="${generatedImageLink}" alt="${cleanQuery}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #3b82f6; box-shadow: 0 4px 25px rgba(59, 130, 246, 0.25); display: block;" />
-</div>`;
+            // direct clean HTML injection response for frontend
+            aiResponse = `<img src="${generatedImageLink}" alt="${cleanQuery}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #3b82f6; display: block; margin: 10px auto;" />`;
         } 
         else if (wantsSearchOnly) {
             let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
@@ -303,11 +298,7 @@ app.post('/api/chat', async (req, res) => {
             
             if (imageResult && imageResult.found) {
                 generatedImageLink = imageResult.url;
-                aiResponse = `Ji bilkul! Ye rahi **${imageResult.realTitle}** ki real photo:
-
-<div style="margin-top: 15px; display: flex; justify-content: center; width: 100%;">
-  <img src="${imageResult.url}" alt="${imageResult.realTitle}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #10b981; box-shadow: 0 4px 25px rgba(16, 185, 129, 0.25); display: block;" />
-</div>`;
+                aiResponse = `<img src="${imageResult.url}" alt="${imageResult.realTitle}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #10b981; display: block; margin: 10px auto;" />`;
             } else {
                 aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public photo nahi mil saki. Agar aap chahte hain ke main iski image AI se khud **generate** karun, toh mujhe boleain "iski photo bana kar do"!`;
             }
@@ -371,7 +362,7 @@ CRITICAL RULES FOR ABSOLUTE TRUTH:
 
     database.conversations[email].push({ sender: 'ai', content: aiResponse });
     
-    // JSON response customized so the frontend can receive structured 'imageUrl' easily!
+    // Explicit responses JSON object
     res.json({ 
         success: true, 
         response: aiResponse, 

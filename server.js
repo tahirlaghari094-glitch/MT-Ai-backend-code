@@ -156,26 +156,18 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- ULTRA-POWERFUL WIKIPEDIA DYNAMIC IMAGE SCRAPER ---
+// --- WIKIPEDIA DYNAMIC IMAGE SCRAPER FOR REAL SEARCH ---
 const findRealWebImage = async (query) => {
     try {
         let cleanQuery = query.trim();
         if (!cleanQuery) return { url: null, realTitle: "", found: false };
 
-        // Manual Quick Auto-Correction for Super-Famous Shortcuts
         const lowerQuery = cleanQuery.toLowerCase();
         if (lowerQuery.includes("imrn") || lowerQuery.includes("imran") || lowerQuery.includes("imr")) {
             cleanQuery = "Imran Khan";
-        } else if (
-            lowerQuery.includes("qaid") || 
-            lowerQuery.includes("quaid") || 
-            lowerQuery.includes("jinnah") || 
-            lowerQuery.includes("qaide azam") || 
-            lowerQuery.includes("quaid e azam") || 
-            lowerQuery.includes("quaid-e-azam")
-        ) {
+        } else if (lowerQuery.includes("qaid") || lowerQuery.includes("quaid") || lowerQuery.includes("jinnah") || lowerQuery.includes("qaide azam") || lowerQuery.includes("quaid e azam")) {
             cleanQuery = "Muhammad Ali Jinnah";
-        } else if (lowerQuery.includes("slman") || lowerQuery.includes("salman") || lowerQuery.includes("slm") || lowerQuery.includes("khn")) {
+        } else if (lowerQuery.includes("slman") || lowerQuery.includes("salman")) {
             cleanQuery = "Salman Khan";
         } else if (lowerQuery.includes("babar") || lowerQuery.includes("bbr")) {
             cleanQuery = "Babar Azam";
@@ -183,7 +175,6 @@ const findRealWebImage = async (query) => {
             cleanQuery = "Shah Rukh Khan";
         }
 
-        // Wikipedia Search API call
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*`;
         const searchResponse = await fetch(searchUrl);
         
@@ -192,7 +183,6 @@ const findRealWebImage = async (query) => {
             if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
                 const matchedTitle = searchData.query.search[0].title;
 
-                // Query details and pageimage/thumbnail URL
                 const imageQueryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(matchedTitle)}&prop=pageimages&pithumbsize=600&format=json&origin=*`;
                 const imageResponse = await fetch(imageQueryUrl);
 
@@ -211,10 +201,8 @@ const findRealWebImage = async (query) => {
                 }
             }
         }
-
         return { url: null, realTitle: query, found: false };
     } catch (e) {
-        console.error("Error fetching real image:", e);
         return { url: null, realTitle: query, found: false };
     }
 };
@@ -255,67 +243,60 @@ app.post('/api/chat', async (req, res) => {
     database.conversations[email].push({ sender: 'user', content: prompt });
 
     let aiResponse = "";
-
     const promptLower = prompt.toLowerCase();
-    const imageKeywords = [
-        "image", "photo", "picture", "draw", "tasveer", "show", "create", 
-        "generate", "look like", "pic", "photos", "dikhao", "banao", "dp", 
-        "dikhayein", "dikhain", "taswer", "dekhni hai", "dekhni", "dikhana", "dekhain"
-    ];
-    const wantsImage = imageKeywords.some(keyword => promptLower.includes(keyword));
+
+    // --- DETECT USER INTENT ---
+    const generateKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch"];
+    const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "photo", "pic", "tasveer", "image", "dekhni hai"];
+
+    const wantsGeneration = generateKeywords.some(kw => promptLower.includes(kw));
+    const wantsSearchOnly = searchKeywords.some(kw => promptLower.includes(kw)) && !wantsGeneration;
 
     try {
         if (pinnedFile) {
             aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
-        } else if (wantsImage) {
-            // --- BYPASS PATH FOR ALL IMAGES (SAFE CLEANING WITH WORD BOUNDARIES) ---
-            let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
-            
-            // Backtrack query from previous messages if query is too short
-            if (cleanQuery.length < 3 && database.conversations[email].length > 1) {
-                const userMessagesOnly = database.conversations[email]
-                    .filter(msg => msg.sender === 'user')
-                    .map(msg => msg.content);
-                
-                if (userMessagesOnly.length >= 2) {
-                    const lastTopic = userMessagesOnly[userMessagesOnly.length - 2];
-                    cleanQuery = lastTopic.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|dikhao|banao|mujhe|ki|dikhayein|dikhain|taswer)\b/gi, "").trim();
-                }
-            }
+        } 
+        else if (wantsGeneration) {
+            // --- AI IMAGE GENERATION PIPELINE (POLINATION API) ---
+            let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|bana kar do|bana do)\b/gi, "").trim();
+            cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
 
-            // Cleaning extra punctuation marks safely
+            if (!cleanQuery) cleanQuery = "A beautiful futuristic digital art";
+
+            const seed = Math.floor(Math.random() * 1000000);
+            const generatedImageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
+
+            aiResponse = `Ji bilkul! Maine aapke kehne par **"${cleanQuery}"** ki tasveer generate kar di hai:\n\n<img src="${generatedImageUrl}" alt="${cleanQuery}" style="max-width:100%; width:300px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
+        } 
+        else if (wantsSearchOnly) {
+            // --- REAL SEARCH PIPELINE (WIKIPEDIA) ---
+            let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
             cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
 
             const imageResult = await findRealWebImage(cleanQuery);
             
             if (imageResult && imageResult.found) {
-                const displayName = imageResult.realTitle;
-                const realImageUrl = imageResult.url;
-                
-                aiResponse = `Ji bilkul! Ye rahi **${displayName}** ki real photo:\n\n<img src="${realImageUrl}" alt="${displayName}" style="max-width:100%; width:280px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
+                aiResponse = `Ji bilkul! Ye rahi **${imageResult.realTitle}** ki real photo:\n\n<img src="${imageResult.url}" alt="${imageResult.realTitle}" style="max-width:100%; width:280px; height:auto; border-radius:12px; display:block; margin-top:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" />`;
             } else {
-                aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public profile photo nahi mil saki. Kya aap kisi aur famous celebrity ya mashhoor cheez ki pic dekhna chahte hain?`;
+                aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public photo nahi mil saki. Agar aap chahte hain ke main iski image AI se khud **generate** karun, toh mujhe boleain "iski photo bana kar do"!`;
             }
-
-        } else {
+        } 
+        else {
             // --- NORMAL CHAT PIPELINE ---
             const conversationHistory = database.conversations[email].slice(-6);
             
-            // --- AZAD, SMART AUR ZERO-ERRORS SYSTEM INSTRUCTION ---
             const systemPrompt = `You are MT AI, an advanced virtual assistant developed by MT. ALWAYS reply in natural Roman Urdu.
 
 CRITICAL RULES FOR ABSOLUTE TRUTH:
-1. You have a vast, complete, and verified knowledge base. You can and MUST answer questions about any international or national celebrity, historical figure, politician, place, science, or general knowledge topic with 100% accurate facts.
+1. You have a vast and verified knowledge base. You must answer questions about any international or national celebrity, historical figure, politician, place, science, or general knowledge topic with 100% accurate facts.
 2. If the user presents a biographical text or details about a person/topic, analyze it with extreme care:
-   - If there are factual mistakes (such as wrong spouses, fake marriages, incorrect parents, wrong siblings, or wrong historical achievements), you must gently and directly correct those errors.
-   - Do NOT agree with incorrect texts. Verify all facts internally before confirming.
-3. NEVER repeat yourself or loop sentences. Keep the tone very natural, professional, intelligent, and helpful.`;
+   - If there are factual mistakes (such as wrong spouses, fake marriages, incorrect parents, wrong siblings, or wrong achievements), you must gently and directly correct those errors. Do NOT agree with incorrect texts.
+   - Example 1: Asif Ali Zardari's wife is Mohtarma Benazir Bhutto. His children are Bilawal, Bakhtawar, and Aseefa. He is currently (in 2026) the 14th President of Pakistan (second term).
+   - Example 2: Nawaz Sharif's wife is Begum Kulsoom Nawaz. His children are Maryam Nawaz, Hassan, Hussain, and Asma.
+   - Example 3: Imran Khan's wives are Jemima Goldsmith, Reham Khan, and Bushra Bibi. He studied at Oxford.
+3. NEVER repeat yourself or loop sentences. Keep the tone natural, highly intelligent, and helpful.`;
 
             try {
-                if (!apiKey) {
-                    throw new Error("Gemini API key is missing. Skipping directly to safe backup.");
-                }
-
                 const contents = conversationHistory.map(msg => ({
                     role: msg.sender === 'user' ? 'user' : 'model',
                     parts: [{ text: msg.content || ' ' }]
@@ -326,43 +307,30 @@ CRITICAL RULES FOR ABSOLUTE TRUTH:
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.1 // Precision mode to guarantee strict facts
+                        temperature: 0.1 
                     }
                 });
 
-                if (geminiResponse && geminiResponse.text) {
-                    aiResponse = geminiResponse.text;
-                } else {
-                    throw new Error("Empty Gemini Response");
-                }
+                aiResponse = geminiResponse.text ? geminiResponse.text : "Empty Gemini Response";
             } catch (geminiError) {
                 console.warn("⚠️ Gemini failed or inactive. Using safe fallback.", geminiError.message);
-                
-                try {
-                    const fallbackFetch = await fetch("https://text.pollinations.ai/", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            messages: [
-                                { role: "system", content: systemPrompt },
-                                ...conversationHistory.map(msg => ({
-                                    role: msg.sender === 'user' ? "user" : "assistant",
-                                    content: msg.content
-                                }))
-                            ],
-                            model: "openai",
-                            temperature: 0.1
-                        })
-                    });
+                const fallbackFetch = await fetch("https://text.pollinations.ai/", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: "system", content: systemPrompt },
+                            ...conversationHistory.map(msg => ({
+                                role: msg.sender === 'user' ? "user" : "assistant",
+                                content: msg.content
+                            }))
+                        ],
+                        model: "openai",
+                        temperature: 0.1
+                    })
+                });
 
-                    if (fallbackFetch.ok) {
-                        aiResponse = await fallbackFetch.text();
-                    } else {
-                        aiResponse = "Maazrat! System is waqt thoda load nahi le raha. Baraye meharbani kuch deir baad koshish karein.";
-                    }
-                } catch (fallbackErr) {
-                    aiResponse = "System temporarily unavailable. Please try again in a few moments.";
-                }
+                aiResponse = fallbackFetch.ok ? await fallbackFetch.text() : "Maazrat! System is waqt thoda busy hai. Baraye meharbani kuch deir baad koshish karein.";
             }
         }
 
@@ -372,11 +340,7 @@ CRITICAL RULES FOR ABSOLUTE TRUTH:
     }
 
     database.conversations[email].push({ sender: 'ai', content: aiResponse });
-
-    res.json({
-        success: true,
-        response: aiResponse
-    });
+    res.json({ success: true, response: aiResponse });
 });
 
 // START EXPRESS SERVER

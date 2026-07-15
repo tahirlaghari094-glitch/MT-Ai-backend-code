@@ -162,14 +162,14 @@ const findRealWebImage = async (query) => {
         let cleanQuery = query.trim();
         if (!cleanQuery) return { url: null, realTitle: "", found: false };
 
-        // 1. Manual Quick Auto-Correction for Super-Famous Shortcuts
+        // Manual Quick Auto-Correction for Super-Famous Shortcuts
         const lowerQuery = cleanQuery.toLowerCase();
         if (lowerQuery.includes("imrn") || lowerQuery.includes("imran") || lowerQuery.includes("imr")) cleanQuery = "Imran Khan";
         else if (lowerQuery.includes("slman") || lowerQuery.includes("salman") || lowerQuery.includes("slm") || lowerQuery.includes("khn")) cleanQuery = "Salman Khan";
         else if (lowerQuery.includes("babar") || lowerQuery.includes("bbr")) cleanQuery = "Babar Azam";
         else if (lowerQuery.includes("sharukh") || lowerQuery.includes("srk") || lowerQuery.includes("shahrukh")) cleanQuery = "Shah Rukh Khan";
 
-        // 2. Wikipedia Search API call
+        // Wikipedia Search API call
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*`;
         const searchResponse = await fetch(searchUrl);
         
@@ -178,7 +178,7 @@ const findRealWebImage = async (query) => {
             if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
                 const matchedTitle = searchData.query.search[0].title;
 
-                // 3. Query details and pageimage/thumbnail URL
+                // Query details and pageimage/thumbnail URL
                 const imageQueryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(matchedTitle)}&prop=pageimages&pithumbsize=600&format=json&origin=*`;
                 const imageResponse = await fetch(imageQueryUrl);
 
@@ -285,11 +285,15 @@ app.post('/api/chat', async (req, res) => {
 
         } else {
             // --- NORMAL CHAT PIPELINE ---
-            const conversationHistory = database.conversations[email].slice(-10);
+            const conversationHistory = database.conversations[email].slice(-6); // History limited to avoid carrying over old bugs
             
-            const systemPrompt = "You are MT AI, an advanced, ultra-intelligent virtual assistant. Reply naturally in Roman Urdu (Pakistani style Urdu using English alphabets). Provide 100% accurate, factual, and correct historical/personal details. Strictly avoid hallucinating fake facts, wrong political affiliations, or nonsensical gibberish. Keep the tone friendly, helpful, and grounded.";
+            const systemPrompt = "You are MT AI, a strictly professional virtual assistant. ALWAYS reply in Roman Urdu. Provide 100% factually true and historically correct information. Imran Khan is ALIVE and currently in prison (Adiala Jail). He was born on 5 October 1952. He graduated from Keble College, Oxford in 1975 (Philosophy, Politics, Economics). He won the 1992 Cricket World Cup (Wasim Akram was Man of the Match in the final). His political party is PTI, founded in 1996. He became Prime Minister on 18 August 2018 until April 2022. Shaukat Khanum Lahore opened in 1994. NEVER invent fake news, fake deaths, or wrong dates. Be helpful, natural, and accurate.";
 
             try {
+                if (!apiKey) {
+                    throw new Error("Gemini API key is missing. Skipping directly to safe backup.");
+                }
+
                 const contents = conversationHistory.map(msg => ({
                     role: msg.sender === 'user' ? 'user' : 'model',
                     parts: [{ text: msg.content || ' ' }]
@@ -300,7 +304,7 @@ app.post('/api/chat', async (req, res) => {
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.3 // Mazeeed kam kiya taake 100% facts hi aayein
+                        temperature: 0.1 // Lowest temperature for factual consistency
                     }
                 });
 
@@ -310,22 +314,31 @@ app.post('/api/chat', async (req, res) => {
                     throw new Error("Empty Gemini Response");
                 }
             } catch (geminiError) {
-                console.warn("⚠️ Gemini 2.0 Free quota exceeded, activating safe fallback!");
+                console.warn("⚠️ Gemini failed or inactive. Using safe fallback.", geminiError.message);
                 
-                // Hum safe backup system par redirect karenge
-                const chatScript = conversationHistory.map(msg => {
-                    const senderName = msg.sender === 'user' ? 'User' : 'Assistant';
-                    return `${senderName}: ${msg.content}`;
-                }).join('\n');
+                try {
+                    // Using structured POST call for Pollinations to strictly respect system instruction
+                    const fallbackFetch = await fetch("https://text.pollinations.ai/", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            messages: [
+                                { role: "system", content: systemPrompt },
+                                { role: "user", content: prompt }
+                            ],
+                            model: "openai",
+                            temperature: 0.1
+                        })
+                    });
 
-                const fullPayload = `System: ${systemPrompt}\n\n${chatScript}\nAssistant:`;
-
-                // SAFE CHAT WITH QWEN/LLAMA BACKUP INSTEAD OF FAKE POLLINATIONS CHAT
-                const fallbackFetch = await fetch(`https://text.pollinations.ai/${encodeURIComponent(fullPayload)}?model=openai&system=${encodeURIComponent(systemPrompt)}`);
-                if (fallbackFetch.ok) {
-                    aiResponse = await fallbackFetch.text();
-                } else {
-                    aiResponse = "Maazrat! System abhi load nahi ho paa raha. Baraye meharbani kuch lamhon baad dobara koshish karein.";
+                    if (fallbackFetch.ok) {
+                        const fallbackData = await fallbackFetch.text();
+                        aiResponse = fallbackData;
+                    } else {
+                        aiResponse = "Maazrat! System is waqt load nahi ho pa raha. Baraye meharbani page refresh kar ke dobara koshish karein.";
+                    }
+                } catch (fallbackErr) {
+                    aiResponse = "System temporarily unavailable. Please try again in a few moments.";
                 }
             }
         }

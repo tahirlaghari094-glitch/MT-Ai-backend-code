@@ -261,12 +261,12 @@ app.post('/api/chat', async (req, res) => {
     const generationKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch", "paint"];
     
     // User wants to SEE/SEARCH/FIND a real photo:
-    const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo"];
+    const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo", "photo", "pic", "tasveer", "image"];
 
     let isGeneration = false;
     let isSearch = false;
 
-    // Strict priority: if generation word is present anywhere, handle as generation
+    // Strict priority logic:
     if (generationKeywords.some(kw => promptLower.includes(kw))) {
         isGeneration = true;
     } else if (searchKeywords.some(kw => promptLower.includes(kw))) {

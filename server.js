@@ -230,7 +230,7 @@ app.post('/api/chat', async (req, res) => {
         if (user.usedLimit >= 10) {
             return res.json({ 
                 success: true, 
-                response: `<strong style="color:#ef4444;">⚠️ Premium Daily Limit Exceeded (10/10)</strong><br>Please upgrade your plan to unlock unlimited requests.`
+                response: `⚠️ Premium Daily Limit Exceeded (10/10). Please upgrade your plan.`
             });
         }
         user.usedLimit += 1;
@@ -246,29 +246,34 @@ app.post('/api/chat', async (req, res) => {
     let generatedImageLink = null;
     const promptLower = prompt.toLowerCase();
 
-    // --- STRONGER AND REFINED INTENT DETECTOR ---
-    const generateKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch"];
-    const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "photo", "pic", "tasveer", "image", "dekhni hai", "dhundo"];
+    // --- SMART CLASSIFIER ---
+    const generateKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch", "image", "tasveer", "photo", "pic"];
+    const searchKeywords = ["show me", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo"];
 
-    // Wants generation takes priority if both are mentioned, otherwise separate clearly
-    const wantsGeneration = generateKeywords.some(kw => promptLower.includes(kw));
-    const wantsSearchOnly = !wantsGeneration && searchKeywords.some(kw => promptLower.includes(kw));
+    // Default to strict intent
+    let isGeneration = false;
+    let isSearch = false;
+
+    if (searchKeywords.some(kw => promptLower.includes(kw))) {
+        isSearch = true;
+    } else if (generateKeywords.some(kw => promptLower.includes(kw))) {
+        isGeneration = true;
+    }
 
     try {
         if (pinnedFile) {
-            aiResponse = `📎 <strong>Asset analyzed:</strong> ${pinnedFile.originalName || "Captured Image"}.<br>The file has been parsed in <strong>${mode}</strong> environment. File URL: <a href="${pinnedFile.url}" target="_blank" rel="noopener noreferrer">View File</a>`;
+            aiResponse = `📎 Asset analyzed: ${pinnedFile.originalName || "Captured Image"}. File URL: ${pinnedFile.url}`;
         } 
-        else if (wantsGeneration) {
-            let cleanQuery = "A beautiful photo";
+        else if (isGeneration) {
+            let cleanQuery = "A beautiful design";
             try {
-                const extractionPrompt = `You are a helper that extracts the core visual description from a user's messy chat message to use as an AI image generator prompt.
+                const extractionPrompt = `You are a professional helper that extracts ONLY the core visual description from a messy user query.
                 User Message: "${prompt}"
                 
                 Instructions:
-                1. Remove conversational clutter like "Ji bilkul! Maine aapke kehne par", "phir ya aarha ha", "banao", "generate", "bana do", etc.
-                2. Keep only the main visual subjects, settings, and style.
-                3. Translate it into high-quality, descriptive English for best generation results.
-                4. Reply with ONLY the final English visual prompt. Do not add any extra text, markdown, or quotes.`;
+                - Remove words like "banao", "generate", "bana do", "tasveer", "image", "photo" etc.
+                - Translate the visual subject into high-quality, professional, descriptive English.
+                - Output ONLY the final visual prompt in English without quotes or extra text.`;
 
                 const geminiExtraction = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
@@ -281,41 +286,39 @@ app.post('/api/chat', async (req, res) => {
                 }
             } catch (err) {
                 cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|bana kar do|bana do)\b/gi, "").trim();
-                cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
             }
 
             const seed = Math.floor(Math.random() * 1000000);
             generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
 
-            // direct clean HTML injection response for frontend
-            aiResponse = `<img src="${generatedImageLink}" alt="${cleanQuery}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #3b82f6; display: block; margin: 10px auto;" />`;
+            // We output plain Markdown format because standard markdown is natively rendered by standard React/Markdown libraries
+            aiResponse = `![${cleanQuery}](${generatedImageLink})`;
         } 
-        else if (wantsSearchOnly) {
+        else if (isSearch) {
             let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
-            cleanQuery = cleanQuery.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
 
             const imageResult = await findRealWebImage(cleanQuery);
             
             if (imageResult && imageResult.found) {
                 generatedImageLink = imageResult.url;
-                aiResponse = `<img src="${imageResult.url}" alt="${imageResult.realTitle}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #10b981; display: block; margin: 10px auto;" />`;
+                aiResponse = `![${imageResult.realTitle}](${imageResult.url})`;
             } else {
-                aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public photo nahi mil saki. Agar aap chahte hain ke main iski image AI se khud **generate** karun, toh mujhe boleain "iski photo bana kar do"!`;
+                aiResponse = `Maazrat! Mujhe ${cleanQuery} ki koi real photo nahi mil saki. Agar aap AI se iski image generate karwana chahte hain toh likhein: "${cleanQuery} ki photo banao"`;
             }
         } 
         else {
+            // --- HIGHLY ACCURATE CHAT WITH GEMINI ---
             const conversationHistory = database.conversations[email].slice(-6);
             
             const systemPrompt = `You are MT AI, an advanced virtual assistant developed by MT. ALWAYS reply in natural Roman Urdu.
 
-CRITICAL RULES FOR ABSOLUTE TRUTH:
-1. You have a vast and verified knowledge base. You must answer questions about any international or national celebrity, historical figure, politician, place, science, or general knowledge topic with 100% accurate facts.
-2. If the user presents a biographical text or details about a person/topic, analyze it with extreme care:
-   - If there are factual mistakes (such as wrong spouses, fake marriages, incorrect parents, wrong siblings, or wrong achievements), you must gently and directly correct those errors. Do NOT agree with incorrect texts.
-   - Example 1: Asif Ali Zardari's wife is Mohtarma Benazir Bhutto. His children are Bilawal, Bakhtawar, and Aseefa. He is currently (in 2026) the 14th President of Pakistan (second term).
+CRITICAL RULES FOR ACCURATE ANSWERS:
+1. You have a vast and verified database. You must answer questions about any international or national celebrity, historical figure, politician, place, science, or general knowledge topic with 100% accurate facts.
+2. If the user presents text with factual mistakes (e.g., wrong spouses, fake marriages, incorrect parents, wrong siblings, or wrong achievements), you must gently and directly correct those errors immediately. Do NOT agree with false statements.
+   - Example 1: Asif Ali Zardari's wife is Mohtarma Benazir Bhutto. His children are Bilawal, Bakhtawar, and Aseefa. He is currently (in 2026) the 14th President of Pakistan.
    - Example 2: Nawaz Sharif's wife is Begum Kulsoom Nawaz. His children are Maryam Nawaz, Hassan, Hussain, and Asma.
-   - Example 3: Imran Khan's wives are Jemima Goldsmith, Reham Khan, and Bushra Bibi. He studied at Oxford.
-3. NEVER repeat yourself or loop sentences. Keep the tone natural, highly intelligent, and helpful.`;
+   - Example 3: Imran Khan's wives are Jemima Goldsmith, Reham Khan, and Bushra Bibi.
+3. Keep the tone natural, highly intelligent, and helpful. Never repeat or loop sentences.`;
 
             try {
                 const contents = conversationHistory.map(msg => ({
@@ -332,9 +335,9 @@ CRITICAL RULES FOR ABSOLUTE TRUTH:
                     }
                 });
 
-                aiResponse = geminiResponse.text ? geminiResponse.text : "Empty Gemini Response";
+                aiResponse = geminiResponse.text ? geminiResponse.text : "Empty Response";
             } catch (geminiError) {
-                console.warn("⚠️ Gemini failed or inactive. Using safe fallback.", geminiError.message);
+                console.warn("⚠️ Gemini fallback active.", geminiError.message);
                 const fallbackFetch = await fetch("https://text.pollinations.ai/", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -351,18 +354,18 @@ CRITICAL RULES FOR ABSOLUTE TRUTH:
                     })
                 });
 
-                aiResponse = fallbackFetch.ok ? await fallbackFetch.text() : "Maazrat! System is waqt thoda busy hai. Baraye meharbani kuch deir baad koshish karein.";
+                aiResponse = fallbackFetch.ok ? await fallbackFetch.text() : "Maazrat! System is waqt busy hai. Please kuch dair baad try karein.";
             }
         }
 
     } catch (error) {
-        console.error("AI Generation Error details:", error);
-        aiResponse = "Server connection lost. Please check your internet or retry.";
+        console.error("Error:", error);
+        aiResponse = "System network error. Please try again.";
     }
 
     database.conversations[email].push({ sender: 'ai', content: aiResponse });
     
-    // Explicit responses JSON object
+    // Explicit API response that sends BOTH the text response and the separate image link
     res.json({ 
         success: true, 
         response: aiResponse, 

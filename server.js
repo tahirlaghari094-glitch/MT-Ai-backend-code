@@ -293,6 +293,7 @@ app.post('/api/chat', async (req, res) => {
 
     try {
         if (isEditRequested) {
+            // --- NEW: MICRO-DETAIL FACE PRESERVATION & OPEN EDITING PIPELINE ---
             let combinedVisualPrompt = "A beautiful photo edited professionally";
             const imagePart = getImageDataForGemini(pinnedFile);
 
@@ -339,9 +340,9 @@ app.post('/api/chat', async (req, res) => {
             const seed = Math.floor(Math.random() * 1000000);
             const sourceImageUrl = pinnedFile.url;
 
-            // --- STRICT 100% SAME-FACE INTEGRATION ---
-            // Pollinations me image-to-image parameters are properly encoded to prevent loading failure and strictly maintain facial landmarks at low strength
-            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}&strength=0.25`;
+            // --- STABLE URL CONSTRUCTION ---
+            // query parameters correct encode format me append karein taake image link break na ho.
+            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}&strength=0.28`;
 
             aiResponse = `Ji bilkul! Maine aapki original photo ko process kiya hai aur face identity ko **100% same** rakhte hue aapki skin tone, eyes, aur features ko lock kar diya hai. Niche edited photo check kijiye:
 
@@ -354,6 +355,7 @@ app.post('/api/chat', async (req, res) => {
 </div>`;
         } 
         else if (isGeneration) {
+            // --- AI IMAGE GENERATION PIPELINE ---
             let cleanQuery = "A beautiful artwork";
             try {
                 const extractionPrompt = `Extract ONLY the visual subject description from this user query for an AI image generator. Translate Roman Urdu/Hindi into high quality descriptive English prompt. Output ONLY the final visual prompt in English without quotes or explanation.
@@ -382,6 +384,7 @@ app.post('/api/chat', async (req, res) => {
 </div>`;
         } 
         else if (isSearch) {
+            // --- REAL SEARCH PIPELINE (WIKIPEDIA) ---
             let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
 
             const imageResult = await findRealWebImage(cleanQuery);
@@ -398,9 +401,10 @@ app.post('/api/chat', async (req, res) => {
             }
         } 
         else {
+            // --- NORMAL CHAT PIPELINE ---
             const conversationHistory = database.conversations[email].slice(-6);
             
-            const systemPrompt = `You are MT AI, an advanced, highly accurate, and super intelligent virtual assistant developed by MT. You possess the cognitive power, intelligence, and logical depth of GPT-4o, Gemini 1.5 Pro, and Claude 3.5 Sonnet.
+            const systemPrompt = `You are MT AI, an advanced, highly accurate virtual assistant developed by MT.
             
 CRITICAL LANGUAGE RULE:
 1. ALWAYS respond in clear, professional English by default. 

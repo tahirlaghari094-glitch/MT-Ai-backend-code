@@ -342,7 +342,8 @@ app.post('/api/chat', async (req, res) => {
 
             // --- STABLE URL CONSTRUCTION ---
             // query parameters correct encode format me append karein taake image link break na ho.
-            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}&strength=0.28`;
+            // Face locking ko behtar karne ke liye we use flux-realism and strength adjustments.
+            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}&strength=0.15`;
 
             aiResponse = `Ji bilkul! Maine aapki original photo ko process kiya hai aur face identity ko **100% same** rakhte hue aapki skin tone, eyes, aur features ko lock kar diya hai. Niche edited photo check kijiye:
 
@@ -410,13 +411,14 @@ CRITICAL LANGUAGE RULE:
 1. ALWAYS respond in clear, professional English by default. 
 2. ONLY switch to Roman Urdu, Urdu script, or another language if the user explicitly asks you to reply in that language (e.g., "Urdu me baat karo", "Roman Urdu me jawab do", etc.) or if they explicitly ask a question in a non-English language. If there is no explicit instruction, default strictly to professional English.
 
-CRITICAL RULES FOR ABSOLUTE TRUTH:
-1. You have a vast and verified knowledge base. You must answer questions about any international or national celebrity, historical figure, politician, place, science, or general knowledge topic with 100% accurate facts.
-2. If the user presents a biographical text or details about a person/topic, analyze it with extreme care:
-   - If there are factual mistakes (such as wrong spouses, fake marriages, incorrect parents, wrong siblings, or wrong achievements), you must gently and directly correct those errors. Do NOT agree with incorrect texts.
+CRITICAL RULES FOR ABSOLUTE TRUTH & ACCURACY:
+1. You have a vast, verified, and highly precise database. You must answer questions about any international/national celebrity, historical figure, politician, dates, places, science, or general knowledge with 100% accurate, factual, and verified information.
+2. Under no circumstances should you guess, hallucinate, or approximate any dates of birth, death, marriage, or historic events. If you are unsure of any date or numerical fact, politely state that you do not have the exact verified date instead of providing a false one.
+3. If the user presents a biographical text or details about a person/topic, analyze it with extreme care:
+   - If there are factual mistakes (such as wrong spouses, fake marriages, incorrect parents, wrong siblings, incorrect dates, or wrong achievements), you must gently, directly, and clearly correct those errors. Do NOT agree with incorrect texts or user assumptions.
    - Example 1: Fahad Mustafa studied Doctor of Pharmacy (Pharm.D) at Baqai Medical University (left incomplete). He debuted in "Sheeshay Ka Mahal" (2002). His breakthrough was "Main Abdul Qadir Hoon" (2010). He hosts "Jeeto Pakistan" on ARY Digital. He is married to Sana Fahad since 2005, and they have two children: Fatima and Moosa.
    - Example 2: Asif Ali Zardari's wife is Mohtarma Benazir Bhutto. His children are Bilawal, Bakhtawar, and Aseefa. He is the 14th President of Pakistan (second term).
-3. NEVER repeat yourself or loop sentences. Keep the tone natural, highly intelligent, professional, and helpful.`;
+4. NEVER repeat yourself or loop sentences. Keep the tone natural, highly intelligent, professional, and helpful.`;
 
             try {
                 const contents = conversationHistory.map(msg => ({
@@ -429,7 +431,7 @@ CRITICAL RULES FOR ABSOLUTE TRUTH:
                     contents: contents,
                     config: {
                         systemInstruction: systemPrompt,
-                        temperature: 0.1 
+                        temperature: 0.0 // Set temperature to 0.0 for absolute precision and fact consistency
                     }
                 });
 
@@ -443,13 +445,13 @@ CRITICAL RULES FOR ABSOLUTE TRUTH:
                         messages: [
                             { role: "system", content: systemPrompt },
                             ...conversationHistory.map(msg => ({
-                                role: msg.sender === 'user' ? "user" : "assistant",
+                                role: msg.sender === "user" ? "user" : "assistant",
                                 content: msg.content
                             }))
                         ],
                         model: "openai",
-                        temperature: 0.1
-                    })
+                        temperature: 0.0 // Consistent 0.0 value for fallback consistency
+                    }
                 });
 
                 aiResponse = fallbackFetch.ok ? await fallbackFetch.text() : "Sorry, the system is currently busy. Please try again in a moment.";

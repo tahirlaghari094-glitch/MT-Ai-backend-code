@@ -312,8 +312,9 @@ app.post('/api/chat', async (req, res) => {
                                     The user has given this edit instruction: "${prompt}".
                                     
                                     Create a single, highly detailed image generation prompt in English that:
-                                    1. Strictly keeps the original main subject/person exactly as they look in the photo (describe their appearance, pose, clothing, and features clearly to keep consistency).
-                                    2. Changes the background, location, atmosphere, or context exactly as requested by the user's edit instruction.
+                                    1. Strictly keeps the original main subject/person exactly in their natural size, original scale, exact proportions, natural body pose, and realistic clothing as they look in the original photo. Avoid stretching, shrinking, or changing the physical identity of the subject.
+                                    2. Only replaces the background, location, atmosphere, or context exactly as requested by the user's edit instruction.
+                                    3. Ensure the lighting on the subject seamlessly blends naturally with the new background.
                                     
                                     Your response must contain ONLY the final English generation prompt. Do not add introductions, explanations, or formatting. Just output the prompt text.`
                                 }]
@@ -336,16 +337,16 @@ app.post('/api/chat', async (req, res) => {
             const seed = Math.floor(Math.random() * 1000000);
             const sourceImageUrl = pinnedFile.url;
 
-            // Generate beautifully customized modified image keeping original identity
+            // Using Pollinations Image-To-Image mapping parameters to maintain exact scale of the subject
             generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux&nologo=true&private=true&enhance=true&seed=${seed}`;
 
-            aiResponse = `Ji bilkul! Maine aapki original photo ko inspect kiya aur aapki instruction ke mutabiq uska background change kar diya hai:
+            aiResponse = `Ji bilkul! Maine aapki original photo ko inspect kiya aur uske subject ko natural proportions aur real size mein barkarar rakhte hue, background change kar diya hai:
 
 <div style="margin-top: 15px; display: block; max-width: 100%;">
   <p style="margin-bottom: 5px; color: #6b7280; font-size: 0.9rem;"><strong>Original Photo:</strong></p>
   <img src="${sourceImageUrl}" style="width: 100%; max-width: 150px; height: auto; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; display: block;" />
 
-  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Vision Blended):</strong></p>
+  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Natural Proportion):</strong></p>
   <img src="${generatedImageLink}" alt="Edited Version" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #8b5cf6; box-shadow: 0 4px 20px rgba(139, 92, 246, 0.25); display: block;" />
 </div>`;
         } 

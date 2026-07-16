@@ -307,19 +307,18 @@ app.post('/api/chat', async (req, res) => {
                             {
                                 role: 'user',
                                 parts: [{
-                                    text: `You are an expert prompt engineer for AI image generators (like Flux/Stable Diffusion).
+                                    text: `You are an expert prompt engineer for AI image generators.
                                     
                                     TASK:
-                                    Analyze the person's face in the provided image with extreme care. 
-                                    Identify and write down their micro-features in English (e.g., exact face shape, nose structure, specific hairstyle and color, eye color, skin complexion, facial hair pattern/beard/mustache, and exact age/ethnicity).
+                                    Analyze the person's face in the provided image with extreme care.
+                                    Identify their key facial features (such as hair, eyes, beard/mustache status, nose, and jawline).
                                     
-                                    The user wants this edit: "${prompt}".
+                                    The user wants this edit instruction: "${prompt}".
                                     
                                     Create a single, highly detailed image generation prompt in English that:
-                                    1. Starts by describing the exact same person using the microscopic face details you just extracted. Mention: "A high-fidelity photo of the exact same [describe face, eyes, beard, hair, nose, skin] from the reference image, maintaining 100% face identity, facial structure, and likeness without any changes to the face."
-                                    2. Incorporates the user's edit requests perfectly (e.g. changing clothing, changing background, adding items, etc.).
-                                    3. Keeps the original person's natural body size, scale, and exact proportions.
-                                    4. Do NOT change the person's face under any circumstances.
+                                    1. Strictly locks and describes the exact facial features, likeness, physical structure, and facial identity of the original person so they look exactly like themselves.
+                                    2. Incorporates the user's edits precisely (e.g., if they asked to change clothes, add sunglasses, change the background, or add items/animals nearby, describe those edits clearly).
+                                    3. Ensure the original subject's realistic scale, proportions, and likeness are maintained perfectly, and the lighting is blended naturally with the final scene.
                                     
                                     Your response must contain ONLY the final English generation prompt. Do not add introductions or explanations.`
                                 }]
@@ -341,16 +340,16 @@ app.post('/api/chat', async (req, res) => {
             const seed = Math.floor(Math.random() * 1000000);
             const sourceImageUrl = pinnedFile.url;
 
-            // Using "flux-realism" which offers unparalleled facial reconstruction and photo-realism
-            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}`;
+            // Image-to-Image configuration with flux-realism and controlled strength to preserve the original face
+            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}&strength=0.55`;
 
-            aiResponse = `Ji bilkul! Maine aapki original photo ko analyze kiya aur aapke face features (chehra) ko **100% same aur intact** rakhte hue, aapki instruction ke mutabiq picture ko bilkul natural size mein edit kar diya hai:
+            aiResponse = `Ji bilkul! Maine aapki original photo ko process kiya hai aur original bande ki shakal (face identity) aur real pose ko bilkul same aur unchanged rakhte hue, aapke prompt ke mutabiq photo ko edit kar diya hai:
 
 <div style="margin-top: 15px; display: block; max-width: 100%;">
   <p style="margin-bottom: 5px; color: #6b7280; font-size: 0.9rem;"><strong>Original Photo:</strong></p>
   <img src="${sourceImageUrl}" style="width: 100%; max-width: 150px; height: auto; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; display: block;" />
 
-  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Identical Face & Natural Proportions):</strong></p>
+  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Identical Face & Proportions):</strong></p>
   <img src="${generatedImageLink}" alt="Edited Version" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #8b5cf6; box-shadow: 0 4px 20px rgba(139, 92, 246, 0.25); display: block;" />
 </div>`;
         } 

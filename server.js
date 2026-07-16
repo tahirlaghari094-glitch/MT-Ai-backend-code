@@ -35,19 +35,21 @@ if (!fs.existsSync(uploadDir)) {
 }
 app.use('/uploads', express.static(uploadDir));
 
-// MULTER STORAGE SYSTEM
+// MULTER STORAGE SYSTEM WITH AUTO-EXTENSIONS FOR STABILITY
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'uploads/');
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
+        let ext = path.extname(file.originalname);
+        if(!ext) ext = '.png'; // Fallback extension
+        cb(null, uniqueSuffix + ext);
     }
 });
 const upload = multer({ storage: storage });
 
-// IN-MEMORY MOCK DATABASE
+// IN-MEMORY DATABASE
 const database = {
     users: [], 
     conversations: {} 
@@ -129,7 +131,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
                 }
             });
         } catch (error) {
-            return res.status(500).json({ success: false, message: "Camera image process karne me masla hua." });
+            return res.status(500).json({ success: false, message: "Camera image processing error." });
         }
     }
 
@@ -252,11 +254,11 @@ app.post('/api/chat', async (req, res) => {
     const promptLower = prompt.toLowerCase();
 
     // --- SMART CLASSIFICATION & INTENT DETECTION ENGINE ---
-    const editKeywords = ["edit", "editing", "change", "tabdeel", "badlo", "modify", "correction", "crop", "color", "background"];
+    const editKeywords = ["edit", "editing", "change", "tabdeel", "badlo", "modify", "correction", "crop", "color", "background", "sko", "isko", "usko"];
     const generationKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch", "paint"];
     const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo", "photo", "pic", "tasveer", "image"];
 
-    // Check if user has uploaded a file and requested an edit/modification
+    // Check if user has uploaded/pinned a file AND requested an edit
     const isEditRequested = editKeywords.some(kw => promptLower.includes(kw)) && pinnedFile;
     const isGeneration = generationKeywords.some(kw => promptLower.includes(kw)) && !isEditRequested;
     const isSearch = searchKeywords.some(kw => promptLower.includes(kw)) && !isEditRequested && !isGeneration;
@@ -264,8 +266,8 @@ app.post('/api/chat', async (req, res) => {
     try {
         if (isEditRequested) {
             // --- PROFESSIONAL IMAGE EDITING PIPELINE (IMAGE-TO-IMAGE) ---
-            let cleanInstructions = prompt.replace(/\b(edit|editing|change|tabdeel|badlo|photo|pic|image|tasveer)\b/gi, "").trim();
-            if (!cleanInstructions) cleanInstructions = "enhance details and styling";
+            let cleanInstructions = prompt.replace(/\b(edit|editing|change|tabdeel|badlo|photo|pic|image|tasveer|isko|sko|usko)\b/gi, "").trim();
+            if (!cleanInstructions) cleanInstructions = "enhance styling and artistic details";
 
             // Optimize English prompt for pollinations using Gemini to bridge the language gap
             try {

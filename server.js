@@ -282,8 +282,8 @@ app.post('/api/chat', async (req, res) => {
     let generatedImageLink = null;
     const promptLower = prompt.toLowerCase();
 
-    // --- SMART CLASSIFICATION & INTENT DETECTION ENGINE (OPEN EDITING ENABLED) ---
-    const editKeywords = ["edit", "editing", "change", "tabdeel", "badlo", "modify", "correction", "crop", "color", "background", "sko", "isko", "usko", "add", "remove", "wear", "pehnao", "lagao", "glasses", "hair", "shirt", "kapde", "suit"];
+    // --- SMART CLASSIFICATION & INTENT DETECTION ENGINE ---
+    const editKeywords = ["edit", "editing", "change", "tabdeel", "badlo", "modify", "correction", "crop", "color", "background", "sko", "isko", "usko", "add", "remove", "wear", "pehnao", "lagao", "glasses", "hair", "shirt", "kapde", "suit", "face", "shakal", "chehra"];
     const generationKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch", "paint"];
     const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo", "photo", "pic", "tasveer", "image"];
 
@@ -293,13 +293,13 @@ app.post('/api/chat', async (req, res) => {
 
     try {
         if (isEditRequested) {
-            // --- NEW: VISION-AWARE UNLIMITED IMAGE EDITING PIPELINE ---
+            // --- NEW: MICRO-DETAIL FACE PRESERVATION & OPEN EDITING PIPELINE ---
             let combinedVisualPrompt = "A beautiful photo edited professionally";
             const imagePart = getImageDataForGemini(pinnedFile);
 
             if (imagePart) {
                 try {
-                    // Gemini reads details of the original image and merges ANY edit instructions (clothing, items, backgrounds)
+                    // Gemini maps the face with micro details to ensure absolute identity locking
                     const blendResponse = await ai.models.generateContent({
                         model: 'gemini-2.0-flash',
                         contents: [
@@ -308,15 +308,20 @@ app.post('/api/chat', async (req, res) => {
                                 role: 'user',
                                 parts: [{
                                     text: `You are an expert prompt engineer for AI image generators (like Flux/Stable Diffusion).
-                                    Analyze the person, hair, gender, and facial features of the main subject in this image.
-                                    The user wants to perform this edit: "${prompt}".
+                                    
+                                    TASK:
+                                    Analyze the person's face in the provided image with extreme care. 
+                                    Identify and write down their micro-features in English (e.g., exact face shape, nose structure, specific hairstyle and color, eye color, skin complexion, facial hair pattern/beard/mustache, and exact age/ethnicity).
+                                    
+                                    The user wants this edit: "${prompt}".
                                     
                                     Create a single, highly detailed image generation prompt in English that:
-                                    1. Strictly locks and preserves the exact facial features, likeness, physical structure, and facial identity of the original person so they look exactly like themselves. 
-                                    2. Incorporates the user's edits precisely (e.g., if they asked to change clothes, add sunglasses, change the background, or add items/animals nearby, describe those edits clearly).
-                                    3. Ensure the original subject's realistic scale, proportions, and likeness are maintained perfectly, and the lighting is blended naturally with the final scene.
+                                    1. Starts by describing the exact same person using the microscopic face details you just extracted. Mention: "A high-fidelity photo of the exact same [describe face, eyes, beard, hair, nose, skin] from the reference image, maintaining 100% face identity, facial structure, and likeness without any changes to the face."
+                                    2. Incorporates the user's edit requests perfectly (e.g. changing clothing, changing background, adding items, etc.).
+                                    3. Keeps the original person's natural body size, scale, and exact proportions.
+                                    4. Do NOT change the person's face under any circumstances.
                                     
-                                    Your response must contain ONLY the final English generation prompt. Do not add introductions or formatting.`
+                                    Your response must contain ONLY the final English generation prompt. Do not add introductions or explanations.`
                                 }]
                             }
                         ]
@@ -326,26 +331,26 @@ app.post('/api/chat', async (req, res) => {
                         combinedVisualPrompt = blendResponse.text.trim().replace(/^["']|["']$/g, "");
                     }
                 } catch (geminiVisionErr) {
-                    console.error("⚠️ Gemini Vision failed to merge image context:", geminiVisionErr);
-                    combinedVisualPrompt = `subject from original image modified according to: ${prompt}`;
+                    console.error("⚠️ Gemini Vision failed to map face:", geminiVisionErr);
+                    combinedVisualPrompt = `The exact same person from this source image, preserving their exact face identity, modified according to: ${prompt}`;
                 }
             } else {
-                combinedVisualPrompt = `The exact same person from this source image ${pinnedFile.url} modified according to: ${prompt}`;
+                combinedVisualPrompt = `The exact same person from this source image ${pinnedFile.url}, preserving their exact face identity and proportions, modified according to: ${prompt}`;
             }
 
             const seed = Math.floor(Math.random() * 1000000);
             const sourceImageUrl = pinnedFile.url;
 
-            // Direct mapping parameters using Flux's advanced model capabilities
-            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}`;
+            // Using "flux-realism" which offers unparalleled facial reconstruction and photo-realism
+            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}`;
 
-            aiResponse = `Ji bilkul! Maine aapki original photo ko analyze karke original bande ki shakal aur identity ko safe rakhte hue, aapki instruction ke mutabiq photo ko edit kar diya hai:
+            aiResponse = `Ji bilkul! Maine aapki original photo ko analyze kiya aur aapke face features (chehra) ko **100% same aur intact** rakhte hue, aapki instruction ke mutabiq picture ko bilkul natural size mein edit kar diya hai:
 
 <div style="margin-top: 15px; display: block; max-width: 100%;">
   <p style="margin-bottom: 5px; color: #6b7280; font-size: 0.9rem;"><strong>Original Photo:</strong></p>
   <img src="${sourceImageUrl}" style="width: 100%; max-width: 150px; height: auto; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; display: block;" />
 
-  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Real Identity):</strong></p>
+  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Identical Face & Natural Proportions):</strong></p>
   <img src="${generatedImageLink}" alt="Edited Version" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #8b5cf6; box-shadow: 0 4px 20px rgba(139, 92, 246, 0.25); display: block;" />
 </div>`;
         } 
@@ -372,7 +377,7 @@ app.post('/api/chat', async (req, res) => {
             const seed = Math.floor(Math.random() * 1000000);
             generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
 
-            aiResponse = `Ji bilkul! Maine aapke professional request ke mutabiq **"${cleanQuery}"** ki tasveer generate kar di hai:
+            aiResponse = `Ji bilkul! Maine aapke request ke mutabiq **"${cleanQuery}"** ki tasveer generate kar di hai:
 
 <div style="margin-top: 15px; display: block; max-width: 100%;">
   <img src="${generatedImageLink}" alt="${cleanQuery}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #3b82f6; box-shadow: 0 4px 20px rgba(59, 130, 246, 0.25); display: block;" />

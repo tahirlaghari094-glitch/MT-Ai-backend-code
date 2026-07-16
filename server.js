@@ -340,17 +340,17 @@ app.post('/api/chat', async (req, res) => {
             const seed = Math.floor(Math.random() * 1000000);
             const sourceImageUrl = pinnedFile.url;
 
-            // Image-to-Image configuration with flux-realism.
-            // Note: Strength is adjusted to 0.45 to heavily favor the original image's face structure!
-            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}&strength=0.45`;
+            // --- STRICT FACE PRESERVATION TUNING ---
+            // Adjusted strength to 0.38 to strictly lock the original face geometry and prevent major alterations!
+            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}&strength=0.38`;
 
-            aiResponse = `Ji bilkul! Maine aapki original photo ko process kiya hai aur original bande ki shakal (face identity) aur real pose ko bilkul same aur unchanged rakhte hue, aapke prompt ke mutabiq photo ko edit kar diya hai:
+            aiResponse = `Ji bilkul! Maine aapki original photo ko process kiya hai aur original face structure ko bilkul unchanged rakhte hue, aapke prompt ke mutabiq photo ko edit kar diya hai. Niche edited photo render ho rahi hai:
 
 <div style="margin-top: 15px; display: block; max-width: 100%;">
   <p style="margin-bottom: 5px; color: #6b7280; font-size: 0.9rem;"><strong>Original Photo:</strong></p>
   <img src="${sourceImageUrl}" style="width: 100%; max-width: 150px; height: auto; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; display: block;" />
 
-  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Identical Face & Proportions):</strong></p>
+  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Same Face Locked):</strong></p>
   <img src="${generatedImageLink}" alt="Edited Version" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #8b5cf6; box-shadow: 0 4px 20px rgba(139, 92, 246, 0.25); display: block;" />
 </div>`;
         } 

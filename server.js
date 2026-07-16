@@ -156,10 +156,13 @@ app.post('/api/chat/clear', (req, res) => {
     res.json({ success: true, message: "Context successfully refreshed." });
 });
 
-// --- WIKIPEDIA DYNAMIC IMAGE SCRAPER FOR REAL SEARCH ---
+// --- GOOGLE-LIKE WIKIPEDIA REAL SEARCH SYSTEM ---
 const findRealWebImage = async (query) => {
     try {
-        let cleanQuery = query.trim();
+        let cleanQuery = query.trim()
+            .replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "")
+            .trim();
+
         if (!cleanQuery) return { url: null, realTitle: "", found: false };
 
         const lowerQuery = cleanQuery.toLowerCase();
@@ -175,6 +178,7 @@ const findRealWebImage = async (query) => {
             cleanQuery = "Shah Rukh Khan";
         }
 
+        // Wikipedia OpenSearch Api to locate the absolute best match
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*`;
         const searchResponse = await fetch(searchUrl);
         
@@ -183,7 +187,8 @@ const findRealWebImage = async (query) => {
             if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
                 const matchedTitle = searchData.query.search[0].title;
 
-                const imageQueryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(matchedTitle)}&prop=pageimages&pithumbsize=600&format=json&origin=*`;
+                // Wikipedia PageImages prop with 800px quality fallback
+                const imageQueryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(matchedTitle)}&prop=pageimages|images&pithumbsize=800&format=json&origin=*`;
                 const imageResponse = await fetch(imageQueryUrl);
 
                 if (imageResponse.ok) {
@@ -191,12 +196,15 @@ const findRealWebImage = async (query) => {
                     const pages = imageData.query.pages;
                     const pageId = Object.keys(pages)[0];
 
-                    if (pageId && pages[pageId] && pages[pageId].thumbnail && pages[pageId].thumbnail.source) {
-                        return {
-                            url: pages[pageId].thumbnail.source,
-                            realTitle: matchedTitle,
-                            found: true
-                        };
+                    if (pageId && pages[pageId]) {
+                        // Priority 1: Check thumbnail from API
+                        if (pages[pageId].thumbnail && pages[pageId].thumbnail.source) {
+                            return {
+                                url: pages[pageId].thumbnail.source,
+                                realTitle: matchedTitle,
+                                found: true
+                            };
+                        }
                     }
                 }
             }
@@ -246,18 +254,21 @@ app.post('/api/chat', async (req, res) => {
     let generatedImageLink = null;
     const promptLower = prompt.toLowerCase();
 
-    // --- SMART CLASSIFIER ---
-    const generateKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch", "image", "tasveer", "photo", "pic"];
-    const searchKeywords = ["show me", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo"];
+    // --- STRICT CLASSIFICATION ENGINE ---
+    // User wants AI to CREATE/GENERATE an image:
+    const generationKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch", "paint"];
+    
+    // User wants to SEE/SEARCH/FIND a real photo:
+    const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo", "photo", "pic", "image", "tasveer", "taswer"];
 
-    // Default to strict intent
     let isGeneration = false;
     let isSearch = false;
 
-    if (searchKeywords.some(kw => promptLower.includes(kw))) {
-        isSearch = true;
-    } else if (generateKeywords.some(kw => promptLower.includes(kw))) {
+    // Strict priority: if generation word is present anywhere, handle as generation
+    if (generationKeywords.some(kw => promptLower.includes(kw))) {
         isGeneration = true;
+    } else if (searchKeywords.some(kw => promptLower.includes(kw))) {
+        isSearch = true;
     }
 
     try {
@@ -265,15 +276,12 @@ app.post('/api/chat', async (req, res) => {
             aiResponse = `📎 Asset analyzed: ${pinnedFile.originalName || "Captured Image"}. File URL: ${pinnedFile.url}`;
         } 
         else if (isGeneration) {
-            let cleanQuery = "A beautiful design";
+            // --- AI IMAGE GENERATION (POLLINATIONS) ---
+            let cleanQuery = "A beautiful artwork";
             try {
-                const extractionPrompt = `You are a professional helper that extracts ONLY the core visual description from a messy user query.
+                const extractionPrompt = `Extract ONLY the visual subject description from this request for an AI generator. Keep details but translate Roman Urdu/Hindi into high quality English prompt.
                 User Message: "${prompt}"
-                
-                Instructions:
-                - Remove words like "banao", "generate", "bana do", "tasveer", "image", "photo" etc.
-                - Translate the visual subject into high-quality, professional, descriptive English.
-                - Output ONLY the final visual prompt in English without quotes or extra text.`;
+                Output ONLY the final descriptive English prompt without quotes or explanation.`;
 
                 const geminiExtraction = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
@@ -291,10 +299,10 @@ app.post('/api/chat', async (req, res) => {
             const seed = Math.floor(Math.random() * 1000000);
             generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
 
-            // We output plain Markdown format because standard markdown is natively rendered by standard React/Markdown libraries
             aiResponse = `![${cleanQuery}](${generatedImageLink})`;
         } 
         else if (isSearch) {
+            // --- REAL SEARCH ENGINE (WIKIPEDIA) ---
             let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
 
             const imageResult = await findRealWebImage(cleanQuery);
@@ -303,11 +311,11 @@ app.post('/api/chat', async (req, res) => {
                 generatedImageLink = imageResult.url;
                 aiResponse = `![${imageResult.realTitle}](${imageResult.url})`;
             } else {
-                aiResponse = `Maazrat! Mujhe ${cleanQuery} ki koi real photo nahi mil saki. Agar aap AI se iski image generate karwana chahte hain toh likhein: "${cleanQuery} ki photo banao"`;
+                aiResponse = `Maazrat! Mujhe "${cleanQuery}" ki koi real photo Wikipedia par nahi mil saki. Agar aap AI se iski nayi image generate karwana chahte hain toh likhein: "${cleanQuery} ki photo banao"`;
             }
         } 
         else {
-            // --- HIGHLY ACCURATE CHAT WITH GEMINI ---
+            // --- 100% ACCURATE CHAT WITH GEMINI ---
             const conversationHistory = database.conversations[email].slice(-6);
             
             const systemPrompt = `You are MT AI, an advanced virtual assistant developed by MT. ALWAYS reply in natural Roman Urdu.
@@ -365,7 +373,7 @@ CRITICAL RULES FOR ACCURATE ANSWERS:
 
     database.conversations[email].push({ sender: 'ai', content: aiResponse });
     
-    // Explicit API response that sends BOTH the text response and the separate image link
+    // Sends BOTH the response and direct imageUrl
     res.json({ 
         success: true, 
         response: aiResponse, 

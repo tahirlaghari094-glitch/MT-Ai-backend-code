@@ -159,12 +159,14 @@ app.post('/api/chat/clear', (req, res) => {
 // --- GOOGLE-LIKE WIKIPEDIA REAL SEARCH SYSTEM ---
 const findRealWebImage = async (query) => {
     try {
+        // Cleaning the query from common stop words
         let cleanQuery = query.trim()
             .replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "")
             .trim();
 
         if (!cleanQuery) return { url: null, realTitle: "", found: false };
 
+        // Mapping common Urdu/Hindi terms to main titles for accurate search
         const lowerQuery = cleanQuery.toLowerCase();
         if (lowerQuery.includes("imrn") || lowerQuery.includes("imran") || lowerQuery.includes("imr")) {
             cleanQuery = "Imran Khan";
@@ -259,7 +261,7 @@ app.post('/api/chat', async (req, res) => {
     const generationKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch", "paint"];
     
     // User wants to SEE/SEARCH/FIND a real photo:
-    const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo", "photo", "pic", "image", "tasveer", "taswer"];
+    const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo"];
 
     let isGeneration = false;
     let isSearch = false;
@@ -276,12 +278,12 @@ app.post('/api/chat', async (req, res) => {
             aiResponse = `📎 Asset analyzed: ${pinnedFile.originalName || "Captured Image"}. File URL: ${pinnedFile.url}`;
         } 
         else if (isGeneration) {
-            // --- AI IMAGE GENERATION (POLLINATIONS) ---
+            // --- PROFESSIONAL AI IMAGE GENERATION PIPELINE ---
+            // Step 1: Use Gemini to extract and upscale the user's Roman Urdu/Messy request into high quality professional English prompt.
             let cleanQuery = "A beautiful artwork";
             try {
-                const extractionPrompt = `Extract ONLY the visual subject description from this request for an AI generator. Keep details but translate Roman Urdu/Hindi into high quality English prompt.
-                User Message: "${prompt}"
-                Output ONLY the final descriptive English prompt without quotes or explanation.`;
+                const extractionPrompt = `Extract ONLY the visual subject description from this messy user query for an AI image generator. Keep details but translate Roman Urdu/Hindi into high quality descriptive English prompt. For example, 'A cute cartoon potato' or 'A hyperrealistic photo of a sleek supercar on a mountain pass'. Output ONLY the final visual prompt in English without quotes or explanation.
+                User Message: "${prompt}"`;
 
                 const geminiExtraction = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
@@ -293,40 +295,54 @@ app.post('/api/chat', async (req, res) => {
                     cleanQuery = geminiExtraction.text.trim().replace(/^["']|["']$/g, "");
                 }
             } catch (err) {
+                // Safe fallback for stop-word cleaning if Gemini fails
                 cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|bana kar do|bana do)\b/gi, "").trim();
             }
 
+            // Step 2: Use Pollinations with high-quality settings and enhanced upscaling parameters
             const seed = Math.floor(Math.random() * 1000000);
+            
+            // PROFESSIONAL QUALITY URL TEMPLATE (Upscaled, private, no logo)
             generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
 
-            aiResponse = `![${cleanQuery}](${generatedImageLink})`;
+            // Clean, scannable, and styled image output container directly rendered on your frontend UI
+            aiResponse = `Ji bilkul! Maine aapke professional request ke mutabiq **"${cleanQuery}"** ki tasveer generate kar di hai:
+
+<div style="margin-top: 15px; display: block; max-width: 100%;">
+  <img src="${generatedImageLink}" alt="${cleanQuery}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #3b82f6; box-shadow: 0 4px 20px rgba(59, 130, 246, 0.25); display: block;" />
+</div>`;
         } 
         else if (isSearch) {
-            // --- REAL SEARCH ENGINE (WIKIPEDIA) ---
+            // --- REAL SEARCH PIPELINE (WIKIPEDIA) ---
             let cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "").trim();
 
             const imageResult = await findRealWebImage(cleanQuery);
             
             if (imageResult && imageResult.found) {
                 generatedImageLink = imageResult.url;
-                aiResponse = `![${imageResult.realTitle}](${imageResult.url})`;
+                aiResponse = `Ji bilkul! Ye rahi **${imageResult.realTitle}** ki real photo:
+
+<div style="margin-top: 15px; display: block; max-width: 100%;">
+  <img src="${imageResult.url}" alt="${imageResult.realTitle}" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #10b981; box-shadow: 0 4px 20px rgba(16, 185, 129, 0.25); display: block;" />
+</div>`;
             } else {
-                aiResponse = `Maazrat! Mujhe "${cleanQuery}" ki koi real photo Wikipedia par nahi mil saki. Agar aap AI se iski nayi image generate karwana chahte hain toh likhein: "${cleanQuery} ki photo banao"`;
+                aiResponse = `Maazrat! Mujhe **${cleanQuery}** ki koi real public photo nahi mil saki. Agar aap chahte hain ke main iski image AI se khud **generate** karun, toh mujhe boleain "iski photo bana kar do"!`;
             }
         } 
         else {
-            // --- 100% ACCURATE CHAT WITH GEMINI ---
+            // --- NORMAL CHAT PIPELINE ---
             const conversationHistory = database.conversations[email].slice(-6);
             
             const systemPrompt = `You are MT AI, an advanced virtual assistant developed by MT. ALWAYS reply in natural Roman Urdu.
 
-CRITICAL RULES FOR ACCURATE ANSWERS:
-1. You have a vast and verified database. You must answer questions about any international or national celebrity, historical figure, politician, place, science, or general knowledge topic with 100% accurate facts.
-2. If the user presents text with factual mistakes (e.g., wrong spouses, fake marriages, incorrect parents, wrong siblings, or wrong achievements), you must gently and directly correct those errors immediately. Do NOT agree with false statements.
-   - Example 1: Asif Ali Zardari's wife is Mohtarma Benazir Bhutto. His children are Bilawal, Bakhtawar, and Aseefa. He is currently (in 2026) the 14th President of Pakistan.
+CRITICAL RULES FOR ABSOLUTE TRUTH:
+1. You have a vast and verified knowledge base. You must answer questions about any international or national celebrity, historical figure, politician, place, science, or general knowledge topic with 100% accurate facts.
+2. If the user presents a biographical text or details about a person/topic, analyze it with extreme care:
+   - If there are factual mistakes (such as wrong spouses, fake marriages, incorrect parents, wrong siblings, or wrong achievements), you must gently and directly correct those errors. Do NOT agree with incorrect texts.
+   - Example 1: Asif Ali Zardari's wife is Mohtarma Benazir Bhutto. His children are Bilawal, Bakhtawar, and Aseefa. He is currently (in 2026) the 14th President of Pakistan (second term).
    - Example 2: Nawaz Sharif's wife is Begum Kulsoom Nawaz. His children are Maryam Nawaz, Hassan, Hussain, and Asma.
-   - Example 3: Imran Khan's wives are Jemima Goldsmith, Reham Khan, and Bushra Bibi.
-3. Keep the tone natural, highly intelligent, and helpful. Never repeat or loop sentences.`;
+   - Example 3: Imran Khan's wives are Jemima Goldsmith, Reham Khan, and Bushra Bibi. He studied at Oxford.
+3. NEVER repeat yourself or loop sentences. Keep the tone natural, highly intelligent, and helpful.`;
 
             try {
                 const contents = conversationHistory.map(msg => ({
@@ -343,9 +359,9 @@ CRITICAL RULES FOR ACCURATE ANSWERS:
                     }
                 });
 
-                aiResponse = geminiResponse.text ? geminiResponse.text : "Empty Response";
+                aiResponse = geminiResponse.text ? geminiResponse.text : "Empty Gemini Response";
             } catch (geminiError) {
-                console.warn("⚠️ Gemini fallback active.", geminiError.message);
+                console.warn("⚠️ Gemini failed or inactive. Using safe fallback.", geminiError.message);
                 const fallbackFetch = await fetch("https://text.pollinations.ai/", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -362,18 +378,18 @@ CRITICAL RULES FOR ACCURATE ANSWERS:
                     })
                 });
 
-                aiResponse = fallbackFetch.ok ? await fallbackFetch.text() : "Maazrat! System is waqt busy hai. Please kuch dair baad try karein.";
+                aiResponse = fallbackFetch.ok ? await fallbackFetch.text() : "Maazrat! System is waqt thoda busy hai. Baraye meharbani kuch deir baad koshish karein.";
             }
         }
 
     } catch (error) {
-        console.error("Error:", error);
-        aiResponse = "System network error. Please try again.";
+        console.error("AI Generation Error details:", error);
+        aiResponse = "Server connection lost. Please check your internet or retry.";
     }
 
     database.conversations[email].push({ sender: 'ai', content: aiResponse });
     
-    // Sends BOTH the response and direct imageUrl
+    // Explicit API response customized so the frontend can receive structured 'imageUrl' easily!
     res.json({ 
         success: true, 
         response: aiResponse, 

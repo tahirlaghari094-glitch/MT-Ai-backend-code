@@ -311,12 +311,12 @@ app.post('/api/chat', async (req, res) => {
                                     
                                     TASK:
                                     Analyze the person's face in the provided image with extreme care.
-                                    Identify their key facial features (such as hair, eyes, beard/mustache status, nose, and jawline).
+                                    Identify their key facial features (such as hair color/style, eye color, beard/mustache status, nose, jawline, and skin tone).
                                     
                                     The user wants this edit instruction: "${prompt}".
                                     
                                     Create a single, highly detailed image generation prompt in English that:
-                                    1. Strictly locks and describes the exact facial features, likeness, physical structure, and facial identity of the original person so they look exactly like themselves.
+                                    1. Strictly locks and describes the exact facial features, likeness, physical structure, and facial identity of the original person so they look EXACTLY like themselves. Use descriptive words like "identical facial structure", "same eyes", "same nose shape", and "matching exact facial identity of the man in the reference image".
                                     2. Incorporates the user's edits precisely (e.g., if they asked to change clothes, add sunglasses, change the background, or add items/animals nearby, describe those edits clearly).
                                     3. Ensure the original subject's realistic scale, proportions, and likeness are maintained perfectly, and the lighting is blended naturally with the final scene.
                                     
@@ -340,8 +340,9 @@ app.post('/api/chat', async (req, res) => {
             const seed = Math.floor(Math.random() * 1000000);
             const sourceImageUrl = pinnedFile.url;
 
-            // Image-to-Image configuration with flux-realism and controlled strength to preserve the original face
-            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}&strength=0.55`;
+            // Image-to-Image configuration with flux-realism.
+            // Note: Strength is adjusted to 0.45 to heavily favor the original image's face structure!
+            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux-realism&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}&strength=0.45`;
 
             aiResponse = `Ji bilkul! Maine aapki original photo ko process kiya hai aur original bande ki shakal (face identity) aur real pose ko bilkul same aur unchanged rakhte hue, aapke prompt ke mutabiq photo ko edit kar diya hai:
 

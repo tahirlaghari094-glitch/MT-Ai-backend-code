@@ -282,8 +282,8 @@ app.post('/api/chat', async (req, res) => {
     let generatedImageLink = null;
     const promptLower = prompt.toLowerCase();
 
-    // --- SMART CLASSIFICATION & INTENT DETECTION ENGINE ---
-    const editKeywords = ["edit", "editing", "change", "tabdeel", "badlo", "modify", "correction", "crop", "color", "background", "sko", "isko", "usko"];
+    // --- SMART CLASSIFICATION & INTENT DETECTION ENGINE (OPEN EDITING ENABLED) ---
+    const editKeywords = ["edit", "editing", "change", "tabdeel", "badlo", "modify", "correction", "crop", "color", "background", "sko", "isko", "usko", "add", "remove", "wear", "pehnao", "lagao", "glasses", "hair", "shirt", "kapde", "suit"];
     const generationKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch", "paint"];
     const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo", "photo", "pic", "tasveer", "image"];
 
@@ -293,13 +293,13 @@ app.post('/api/chat', async (req, res) => {
 
     try {
         if (isEditRequested) {
-            // --- NEW: VISION-AWARE INTELLIGENT IMAGE EDITING PIPELINE ---
+            // --- NEW: VISION-AWARE UNLIMITED IMAGE EDITING PIPELINE ---
             let combinedVisualPrompt = "A beautiful photo edited professionally";
             const imagePart = getImageDataForGemini(pinnedFile);
 
             if (imagePart) {
                 try {
-                    // Gemini analyzes original image and guarantees identity preservation
+                    // Gemini reads details of the original image and merges ANY edit instructions (clothing, items, backgrounds)
                     const blendResponse = await ai.models.generateContent({
                         model: 'gemini-2.0-flash',
                         contents: [
@@ -307,14 +307,14 @@ app.post('/api/chat', async (req, res) => {
                             {
                                 role: 'user',
                                 parts: [{
-                                    text: `You are an expert prompt engineer for AI image editors (like Flux/Stable Diffusion).
-                                    Analyze the person, face features, hair, gender, clothing, and overall look of the subject in this image.
-                                    The user wants this edit: "${prompt}".
+                                    text: `You are an expert prompt engineer for AI image generators (like Flux/Stable Diffusion).
+                                    Analyze the person, hair, gender, and facial features of the main subject in this image.
+                                    The user wants to perform this edit: "${prompt}".
                                     
                                     Create a single, highly detailed image generation prompt in English that:
-                                    1. Strictly preserves and describes the exact face, look, clothing, and facial features of the original person so that the generator does not change their identity. Specify that the face and body of the person from the original image must remain 100% identical and unchanged.
-                                    2. Clearly describes the new background, lighting, and context requested by the user's edit instruction.
-                                    3. Ensure the lighting on the subject's face matches the new background context naturally.
+                                    1. Strictly locks and preserves the exact facial features, likeness, physical structure, and facial identity of the original person so they look exactly like themselves. 
+                                    2. Incorporates the user's edits precisely (e.g., if they asked to change clothes, add sunglasses, change the background, or add items/animals nearby, describe those edits clearly).
+                                    3. Ensure the original subject's realistic scale, proportions, and likeness are maintained perfectly, and the lighting is blended naturally with the final scene.
                                     
                                     Your response must contain ONLY the final English generation prompt. Do not add introductions or formatting.`
                                 }]
@@ -327,25 +327,25 @@ app.post('/api/chat', async (req, res) => {
                     }
                 } catch (geminiVisionErr) {
                     console.error("⚠️ Gemini Vision failed to merge image context:", geminiVisionErr);
-                    combinedVisualPrompt = `subject from original image with background changed to ${prompt}`;
+                    combinedVisualPrompt = `subject from original image modified according to: ${prompt}`;
                 }
             } else {
-                combinedVisualPrompt = `The exact same subject from this source image ${pinnedFile.url} with its background changed to ${prompt}`;
+                combinedVisualPrompt = `The exact same person from this source image ${pinnedFile.url} modified according to: ${prompt}`;
             }
 
             const seed = Math.floor(Math.random() * 1000000);
             const sourceImageUrl = pinnedFile.url;
 
-            // Map & feed the original image as a direct parameter to Pollinations Flux model to maintain 100% face likeness
+            // Direct mapping parameters using Flux's advanced model capabilities
             generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux&nologo=true&private=true&enhance=true&seed=${seed}&image=${encodeURIComponent(sourceImageUrl)}`;
 
-            aiResponse = `Ji bilkul! Maine aapki original photo ko process kiya hai aur original bande ki shakal (face identity) aur real body pose ko bilkul intact aur unchanged rakhte hue, background professional tareeqe se change kar diya hai:
+            aiResponse = `Ji bilkul! Maine aapki original photo ko analyze karke original bande ki shakal aur identity ko safe rakhte hue, aapki instruction ke mutabiq photo ko edit kar diya hai:
 
 <div style="margin-top: 15px; display: block; max-width: 100%;">
   <p style="margin-bottom: 5px; color: #6b7280; font-size: 0.9rem;"><strong>Original Photo:</strong></p>
   <img src="${sourceImageUrl}" style="width: 100%; max-width: 150px; height: auto; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; display: block;" />
 
-  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Face & Body Preserved):</strong></p>
+  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Real Identity):</strong></p>
   <img src="${generatedImageLink}" alt="Edited Version" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #8b5cf6; box-shadow: 0 4px 20px rgba(139, 92, 246, 0.25); display: block;" />
 </div>`;
         } 

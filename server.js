@@ -159,14 +159,12 @@ app.post('/api/chat/clear', (req, res) => {
 // --- GOOGLE-LIKE WIKIPEDIA REAL SEARCH SYSTEM ---
 const findRealWebImage = async (query) => {
     try {
-        // Cleaning the query from common stop words
         let cleanQuery = query.trim()
             .replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana)\b/gi, "")
             .trim();
 
         if (!cleanQuery) return { url: null, realTitle: "", found: false };
 
-        // Mapping common Urdu/Hindi terms to main titles for accurate search
         const lowerQuery = cleanQuery.toLowerCase();
         if (lowerQuery.includes("imrn") || lowerQuery.includes("imran") || lowerQuery.includes("imr")) {
             cleanQuery = "Imran Khan";
@@ -180,7 +178,6 @@ const findRealWebImage = async (query) => {
             cleanQuery = "Shah Rukh Khan";
         }
 
-        // Wikipedia OpenSearch Api to locate the absolute best match
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*`;
         const searchResponse = await fetch(searchUrl);
         
@@ -189,7 +186,6 @@ const findRealWebImage = async (query) => {
             if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
                 const matchedTitle = searchData.query.search[0].title;
 
-                // Wikipedia PageImages prop with 800px quality fallback
                 const imageQueryUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(matchedTitle)}&prop=pageimages|images&pithumbsize=800&format=json&origin=*`;
                 const imageResponse = await fetch(imageQueryUrl);
 
@@ -199,7 +195,6 @@ const findRealWebImage = async (query) => {
                     const pageId = Object.keys(pages)[0];
 
                     if (pageId && pages[pageId]) {
-                        // Priority 1: Check thumbnail from API
                         if (pages[pageId].thumbnail && pages[pageId].thumbnail.source) {
                             return {
                                 url: pages[pageId].thumbnail.source,
@@ -256,33 +251,61 @@ app.post('/api/chat', async (req, res) => {
     let generatedImageLink = null;
     const promptLower = prompt.toLowerCase();
 
-    // --- STRICT CLASSIFICATION ENGINE ---
-    // User wants AI to CREATE/GENERATE an image:
+    // --- SMART CLASSIFICATION & INTENT DETECTION ENGINE ---
+    const editKeywords = ["edit", "editing", "change", "tabdeel", "badlo", "modify", "correction", "crop", "color", "background"];
     const generationKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch", "paint"];
-    
-    // User wants to SEE/SEARCH/FIND a real photo:
     const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo", "photo", "pic", "tasveer", "image"];
 
-    let isGeneration = false;
-    let isSearch = false;
-
-    // Strict priority logic:
-    if (generationKeywords.some(kw => promptLower.includes(kw))) {
-        isGeneration = true;
-    } else if (searchKeywords.some(kw => promptLower.includes(kw))) {
-        isSearch = true;
-    }
+    // Check if user has uploaded a file and requested an edit/modification
+    const isEditRequested = editKeywords.some(kw => promptLower.includes(kw)) && pinnedFile;
+    const isGeneration = generationKeywords.some(kw => promptLower.includes(kw)) && !isEditRequested;
+    const isSearch = searchKeywords.some(kw => promptLower.includes(kw)) && !isEditRequested && !isGeneration;
 
     try {
-        if (pinnedFile) {
-            aiResponse = `📎 Asset analyzed: ${pinnedFile.originalName || "Captured Image"}. File URL: ${pinnedFile.url}`;
+        if (isEditRequested) {
+            // --- PROFESSIONAL IMAGE EDITING PIPELINE (IMAGE-TO-IMAGE) ---
+            let cleanInstructions = prompt.replace(/\b(edit|editing|change|tabdeel|badlo|photo|pic|image|tasveer)\b/gi, "").trim();
+            if (!cleanInstructions) cleanInstructions = "enhance details and styling";
+
+            // Optimize English prompt for pollinations using Gemini to bridge the language gap
+            try {
+                const extractionPrompt = `Translate this image editing instruction from Urdu/Roman Urdu into clear, precise English. Avoid conversation, output ONLY the instructions.
+                Instruction: "${cleanInstructions}"`;
+
+                const geminiExtraction = await ai.models.generateContent({
+                    model: 'gemini-2.0-flash',
+                    contents: [{ role: 'user', parts: [{ text: extractionPrompt }] }],
+                    config: { temperature: 0.1 }
+                });
+
+                if (geminiExtraction.text && geminiExtraction.text.trim()) {
+                    cleanInstructions = geminiExtraction.text.trim().replace(/^["']|["']$/g, "");
+                }
+            } catch (err) {
+                // Fallback intact
+            }
+
+            const seed = Math.floor(Math.random() * 1000000);
+            const sourceImageUrl = pinnedFile.url;
+
+            // Pollinations.ai processes image modifications by combining the original image as structured input
+            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanInstructions)}?width=1024&height=1024&model=flux&image=${encodeURIComponent(sourceImageUrl)}&nologo=true&private=true&enhance=true&seed=${seed}`;
+
+            aiResponse = `Ji bilkul! Maine aapke design prompt **"${cleanInstructions}"** ke mutabiq aapki photo ko professionally edit kar diya hai:
+
+<div style="margin-top: 15px; display: block; max-width: 100%;">
+  <p style="margin-bottom: 5px; color: #6b7280; font-size: 0.9rem;"><strong>Original Photo:</strong></p>
+  <img src="${sourceImageUrl}" style="width: 100%; max-width: 150px; height: auto; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; display: block;" />
+
+  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Professional Result:</strong></p>
+  <img src="${generatedImageLink}" alt="Edited Version" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #8b5cf6; box-shadow: 0 4px 20px rgba(139, 92, 246, 0.25); display: block;" />
+</div>`;
         } 
         else if (isGeneration) {
             // --- PROFESSIONAL AI IMAGE GENERATION PIPELINE ---
-            // Step 1: Use Gemini to extract and upscale the user's Roman Urdu/Messy request into high quality professional English prompt.
             let cleanQuery = "A beautiful artwork";
             try {
-                const extractionPrompt = `Extract ONLY the visual subject description from this messy user query for an AI image generator. Keep details but translate Roman Urdu/Hindi into high quality descriptive English prompt. For example, 'A cute cartoon potato' or 'A hyperrealistic photo of a sleek supercar on a mountain pass'. Output ONLY the final visual prompt in English without quotes or explanation.
+                const extractionPrompt = `Extract ONLY the visual subject description from this messy user query for an AI image generator. Keep details but translate Roman Urdu/Hindi into high quality descriptive English prompt. Output ONLY the final visual prompt in English without quotes or explanation.
                 User Message: "${prompt}"`;
 
                 const geminiExtraction = await ai.models.generateContent({
@@ -295,17 +318,12 @@ app.post('/api/chat', async (req, res) => {
                     cleanQuery = geminiExtraction.text.trim().replace(/^["']|["']$/g, "");
                 }
             } catch (err) {
-                // Safe fallback for stop-word cleaning if Gemini fails
                 cleanQuery = prompt.replace(/\b(show me|give me|draw|create|generate|tasveer|image|photo|pic|of|a|an|please|draw a|iski|isiki|it|this|that|dikhao|banao|mujhe|dikhaen|dhundo|search|ki|dikhayein|dikhain|taswer|dekhni hai|dekhni|dikhana|bana kar do|bana do)\b/gi, "").trim();
             }
 
-            // Step 2: Use Pollinations with high-quality settings and enhanced upscaling parameters
             const seed = Math.floor(Math.random() * 1000000);
-            
-            // PROFESSIONAL QUALITY URL TEMPLATE (Upscaled, private, no logo)
             generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanQuery)}?width=1024&height=1024&nologo=true&private=true&enhance=true&seed=${seed}`;
 
-            // Clean, scannable, and styled image output container directly rendered on your frontend UI
             aiResponse = `Ji bilkul! Maine aapke professional request ke mutabiq **"${cleanQuery}"** ki tasveer generate kar di hai:
 
 <div style="margin-top: 15px; display: block; max-width: 100%;">
@@ -337,15 +355,14 @@ app.post('/api/chat', async (req, res) => {
             
 CRITICAL LANGUAGE RULE:
 1. ALWAYS respond in clear, professional English by default. 
-2. ONLY switch to Roman Urdu, Urdu script, or another language if the user explicitly asks you to reply in that language (e.g., "Urdu me baat karo", "Roman Urdu me jawab do", etc.) or if they explicitly ask a question in a non-English language and it makes linguistic sense to keep the flow. If there is no explicit instruction, default strictly to professional English.
+2. ONLY switch to Roman Urdu, Urdu script, or another language if the user explicitly asks you to reply in that language (e.g., "Urdu me baat karo", "Roman Urdu me jawab do", etc.) or if they explicitly ask a question in a non-English language. If there is no explicit instruction, default strictly to professional English.
 
 CRITICAL RULES FOR ABSOLUTE TRUTH:
 1. You have a vast and verified knowledge base. You must answer questions about any international or national celebrity, historical figure, politician, place, science, or general knowledge topic with 100% accurate facts.
 2. If the user presents a biographical text or details about a person/topic, analyze it with extreme care:
    - If there are factual mistakes (such as wrong spouses, fake marriages, incorrect parents, wrong siblings, or wrong achievements), you must gently and directly correct those errors. Do NOT agree with incorrect texts.
-   - Example 1: Asif Ali Zardari's wife is Mohtarma Benazir Bhutto. His children are Bilawal, Bakhtawar, and Aseefa. He is currently (in 2026) the 14th President of Pakistan (second term).
-   - Example 2: Nawaz Sharif's wife is Begum Kulsoom Nawaz. His children are Maryam Nawaz, Hassan, Hussain, and Asma.
-   - Example 3: Imran Khan's wives are Jemima Goldsmith, Reham Khan, and Bushra Bibi. He studied at Oxford.
+   - Example 1: Fahad Mustafa studied Doctor of Pharmacy (Pharm.D) at Baqai Medical University (left incomplete). He debuted in "Sheeshay Ka Mahal" (2002). His breakthrough was "Main Abdul Qadir Hoon" (2010). He hosts "Jeeto Pakistan" on ARY Digital. He is married to Sana Fahad since 2005, and they have two children: Fatima and Moosa.
+   - Example 2: Asif Ali Zardari's wife is Mohtarma Benazir Bhutto. His children are Bilawal, Bakhtawar, and Aseefa. He is the 14th President of Pakistan (second term).
 3. NEVER repeat yourself or loop sentences. Keep the tone natural, highly intelligent, professional, and helpful.`;
 
             try {
@@ -393,7 +410,6 @@ CRITICAL RULES FOR ABSOLUTE TRUTH:
 
     database.conversations[email].push({ sender: 'ai', content: aiResponse });
     
-    // Explicit API response customized so the frontend can receive structured 'imageUrl' easily!
     res.json({ 
         success: true, 
         response: aiResponse, 

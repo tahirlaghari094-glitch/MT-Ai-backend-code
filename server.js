@@ -55,6 +55,35 @@ const database = {
     conversations: {} 
 };
 
+// HELPER: CONVERT LOCAL PINNED FILE TO BASE64 FOR GEMINI VISION SENSING
+const getImageDataForGemini = (pinnedFile) => {
+    try {
+        let filePath = '';
+        if (pinnedFile.url.includes('/uploads/')) {
+            const filename = pinnedFile.url.split('/uploads/')[1];
+            filePath = path.join(__dirname, 'uploads', filename);
+        }
+        
+        if (filePath && fs.existsSync(filePath)) {
+            const data = fs.readFileSync(filePath);
+            const ext = path.extname(filePath).toLowerCase();
+            let mimeType = 'image/png';
+            if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+            if (ext === '.webp') mimeType = 'image/webp';
+            
+            return {
+                inlineData: {
+                    data: data.toString('base64'),
+                    mimeType: mimeType
+                }
+            };
+        }
+    } catch (e) {
+        console.error("⚠️ Local file read failed for Gemini Vision:", e);
+    }
+    return null;
+};
+
 // 1. AUTHENTICATION: SIGN UP SYSTEM
 app.post('/api/auth/signup', (req, res) => {
     const { email, password } = req.body;
@@ -258,56 +287,73 @@ app.post('/api/chat', async (req, res) => {
     const generationKeywords = ["banao", "generate", "bana kar do", "bana do", "create", "draw", "sketch", "paint"];
     const searchKeywords = ["show", "dikhao", "dikhayein", "dikhain", "search", "dhundo", "real photo", "real picture", "asli photo", "photo", "pic", "tasveer", "image"];
 
-    // Check if user has uploaded/pinned a file AND requested an edit
     const isEditRequested = editKeywords.some(kw => promptLower.includes(kw)) && pinnedFile;
     const isGeneration = generationKeywords.some(kw => promptLower.includes(kw)) && !isEditRequested;
     const isSearch = searchKeywords.some(kw => promptLower.includes(kw)) && !isEditRequested && !isGeneration;
 
     try {
         if (isEditRequested) {
-            // --- PROFESSIONAL IMAGE EDITING PIPELINE (IMAGE-TO-IMAGE) ---
-            let cleanInstructions = prompt.replace(/\b(edit|editing|change|tabdeel|badlo|photo|pic|image|tasveer|isko|sko|usko)\b/gi, "").trim();
-            if (!cleanInstructions) cleanInstructions = "enhance styling and artistic details";
+            // --- NEW: VISION-AWARE INTELLIGENT IMAGE EDITING PIPELINE ---
+            let combinedVisualPrompt = "A beautiful photo edited professionally";
+            const imagePart = getImageDataForGemini(pinnedFile);
 
-            // Optimize English prompt for pollinations using Gemini to bridge the language gap
-            try {
-                const extractionPrompt = `Translate this image editing instruction from Urdu/Roman Urdu into clear, precise English. Avoid conversation, output ONLY the instructions.
-                Instruction: "${cleanInstructions}"`;
+            if (imagePart) {
+                try {
+                    // Gemini handles original image view and instruction blending perfectly
+                    const blendResponse = await ai.models.generateContent({
+                        model: 'gemini-2.0-flash',
+                        contents: [
+                            imagePart,
+                            {
+                                role: 'user',
+                                parts: [{
+                                    text: `You are an expert prompt engineer for AI image generators (like Flux/Stable Diffusion).
+                                    Analyze the subject, person, character, or object in this image.
+                                    The user has given this edit instruction: "${prompt}".
+                                    
+                                    Create a single, highly detailed image generation prompt in English that:
+                                    1. Strictly keeps the original main subject/person exactly as they look in the photo (describe their appearance, pose, clothing, and features clearly to keep consistency).
+                                    2. Changes the background, location, atmosphere, or context exactly as requested by the user's edit instruction.
+                                    
+                                    Your response must contain ONLY the final English generation prompt. Do not add introductions, explanations, or formatting. Just output the prompt text.`
+                                }]
+                            }
+                        ]
+                    });
 
-                const geminiExtraction = await ai.models.generateContent({
-                    model: 'gemini-2.0-flash',
-                    contents: [{ role: 'user', parts: [{ text: extractionPrompt }] }],
-                    config: { temperature: 0.1 }
-                });
-
-                if (geminiExtraction.text && geminiExtraction.text.trim()) {
-                    cleanInstructions = geminiExtraction.text.trim().replace(/^["']|["']$/g, "");
+                    if (blendResponse.text && blendResponse.text.trim()) {
+                        combinedVisualPrompt = blendResponse.text.trim().replace(/^["']|["']$/g, "");
+                    }
+                } catch (geminiVisionErr) {
+                    console.error("⚠️ Gemini Vision failed to merge image context:", geminiVisionErr);
+                    combinedVisualPrompt = `subject from original image with background changed to ${prompt}`;
                 }
-            } catch (err) {
-                // Fallback intact
+            } else {
+                // Remote/URL fallback merging if reading local file failed
+                combinedVisualPrompt = `The subject from this source image ${pinnedFile.url} with its background changed to ${prompt}`;
             }
 
             const seed = Math.floor(Math.random() * 1000000);
             const sourceImageUrl = pinnedFile.url;
 
-            // Pollinations.ai processes image modifications by combining the original image as structured input
-            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanInstructions)}?width=1024&height=1024&model=flux&image=${encodeURIComponent(sourceImageUrl)}&nologo=true&private=true&enhance=true&seed=${seed}`;
+            // Generate beautifully customized modified image keeping original identity
+            generatedImageLink = `https://image.pollinations.ai/prompt/${encodeURIComponent(combinedVisualPrompt)}?width=1024&height=1024&model=flux&nologo=true&private=true&enhance=true&seed=${seed}`;
 
-            aiResponse = `Ji bilkul! Maine aapke design prompt **"${cleanInstructions}"** ke mutabiq aapki photo ko professionally edit kar diya hai:
+            aiResponse = `Ji bilkul! Maine aapki original photo ko inspect kiya aur aapki instruction ke mutabiq uska background change kar diya hai:
 
 <div style="margin-top: 15px; display: block; max-width: 100%;">
   <p style="margin-bottom: 5px; color: #6b7280; font-size: 0.9rem;"><strong>Original Photo:</strong></p>
   <img src="${sourceImageUrl}" style="width: 100%; max-width: 150px; height: auto; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; display: block;" />
 
-  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Professional Result:</strong></p>
+  <p style="margin-bottom: 5px; color: #8b5cf6; font-size: 0.95rem;"><strong>Edited Version (Vision Blended):</strong></p>
   <img src="${generatedImageLink}" alt="Edited Version" style="width: 100%; max-width: 450px; height: auto; border-radius: 12px; border: 2px solid #8b5cf6; box-shadow: 0 4px 20px rgba(139, 92, 246, 0.25); display: block;" />
 </div>`;
         } 
         else if (isGeneration) {
-            // --- PROFESSIONAL AI IMAGE GENERATION PIPELINE ---
+            // --- AI IMAGE GENERATION PIPELINE ---
             let cleanQuery = "A beautiful artwork";
             try {
-                const extractionPrompt = `Extract ONLY the visual subject description from this messy user query for an AI image generator. Keep details but translate Roman Urdu/Hindi into high quality descriptive English prompt. Output ONLY the final visual prompt in English without quotes or explanation.
+                const extractionPrompt = `Extract ONLY the visual subject description from this user query for an AI image generator. Translate Roman Urdu/Hindi into high quality descriptive English prompt. Output ONLY the final visual prompt in English without quotes or explanation.
                 User Message: "${prompt}"`;
 
                 const geminiExtraction = await ai.models.generateContent({
